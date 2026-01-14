@@ -21,39 +21,12 @@
 
     <!--    HERO    -->
     <div class="hero">
-        <div class="hero-content">
-            <h1 class="hero-title">Benvingut/da a eXiT Control Energètic</h1>
-            <p class="hero-subtitle">Gestiona, visualitza i optimitza la teva energia amb intel·ligència artificial</p>
-            <a href="#stats" class="hero-cta">Comença Ara <i class="fa-solid fa-arrow-right"></i></a>
-        </div>
-    </div>
-
-    <!--    STATS DASHBOARD    -->
-    <div id="stats" class="stats-dashboard">
-        <div class="stat-card">
-            <i class="fa-solid fa-brain stat-icon"></i>
-            <div class="stat-value" data-target="0" id="models-count">0</div>
-            <div class="stat-label">Models Entrenats</div>
-        </div>
-        <div class="stat-card">
-            <i class="fa-solid fa-bolt stat-icon"></i>
-            <div class="stat-value" data-target="0" id="energy-saved">0</div>
-            <div class="stat-label">kWh Optimitzats</div>
-        </div>
-        <div class="stat-card">
-            <i class="fa-solid fa-chart-line stat-icon"></i>
-            <div class="stat-value" data-target="0" id="predictions-made">0</div>
-            <div class="stat-label">Prediccions Actives</div>
-        </div>
-        <div class="stat-card">
-            <i class="fa-solid fa-clock stat-icon"></i>
-            <div class="stat-value" id="current-time">--:--</div>
-            <div class="stat-label">Hora Actual</div>
-        </div>
+        <h1>Benvingut/da a eXiT Control Energètic</h1>
+        <p>Gestiona, visualitza i optimitza la teva energia</p>
     </div>
 
     <!--    PANIK BUTTON    -->
-    <div style="display: flex; justify-content: center; align-items: center; margin: 20px 0;">
+    <div style="display: flex; justify-content: center; align-items: center;">
         <button class="btn" onclick="panikButtonTest()" style="padding: 10px 20px;"><i class="fa-solid fa-skull"></i>
             PANIK BUTTON</button>
     </div>
@@ -63,43 +36,33 @@
         <!--   DISPOSITIUS    -->
         <div class="info-cards-container">
             <a href="./sensors" class="info-card">
-                <div class="icon-wrapper" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                    <i class="fa-solid fa-square-check"></i>
-                </div>
+                <i class="fa-solid fa-square-check"></i>
                 <h3>Dispositius</h3>
                 <p>Selecciona els dispositius i entitats de les que vols monitoritzar i recollir dades.</p>
             </a>
             <!--     DATABASE       -->
             <a href="./databaseView" class="info-card">
-                <div class="icon-wrapper" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                    <i class="fa-solid fa-database"></i>
-                </div>
+                <i class="fa-solid fa-database"></i>
                 <h3>Base de Dades</h3>
                 <p>Visualitza les dades en un rang de temps personalitzat.</p>
             </a>
             <!--   MODEL     -->
             <a href="./model" class="info-card">
-                <div class="icon-wrapper" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-                    <i class="fa-solid fa-brain"></i>
-                </div>
+                <i class="fa-solid fa-brain"></i>
                 <h3>Crear Model</h3>
                 <p>Entrena models predictius d'ús energètic per sensors específics i realitza les prediccions amb
                     aquests.</p>
             </a>
             <!--   OPTIMITZACIÓ     -->
             <a href="./optimization" class="info-card">
-                <div class="icon-wrapper" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-                    <i class="fa-solid fa-clock"></i>
-                </div>
+                <i class="fa-solid fa-clock"></i>
                 <h3>Optimització</h3>
                 <p>Selecciona assets per optimitzar i visualitza les configuracions creades per a les pròximes 24 hores.
                 </p>
             </a>
             <!--   CONFIG   -->
             <a href="./config_page" class="info-card">
-                <div class="icon-wrapper" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-                    <i class="fa-solid fa-user-gear"></i>
-                </div>
+                <i class="fa-solid fa-user-gear"></i>
                 <h3>Configuració</h3>
                 <p>Ajusta paràmetres d'usuari. Uneix-te o abandona una comunitat.</p>
             </a>
@@ -108,38 +71,16 @@
     </div>
 
 
-    <!--    SECTION DIVIDER    -->
-    <div class="section-divider">
-        <div class="divider-line"></div>
-        <i class="fa-solid fa-calendar-days divider-icon"></i>
-        <div class="divider-line"></div>
-    </div>
-
     <!--    PLANIFICACIÓ SONNEN -->
     <div class="scheduler-container">
-        <h2><i class="fa-solid fa-clock"></i> Horaris Configurats</h2>
-        <div class="timeline-indicator">
-            <div class="timeline-bar">
-                <div class="timeline-progress" id="timeline-progress"></div>
-                <div class="timeline-marker" id="timeline-marker">
-                    <span class="timeline-time" id="timeline-time">Ara</span>
-                </div>
-            </div>
-        </div>
+        <h2>Horaris Configurats</h2>
         <div id="scheduler-grid" class="scheduler-grid"> <!--AQUI ES POSA EL PLOTLY--> </div>
     </div>
 
 
-    <!--    SECTION DIVIDER    -->
-    <div class="section-divider">
-        <div class="divider-line"></div>
-        <i class="fa-solid fa-chart-line divider-icon"></i>
-        <div class="divider-line"></div>
-    </div>
-
     <!--    FORECASTS     -->
     <div class="forecasts-container">
-        <h2><i class="fa-solid fa-brain"></i> Forecastings Guardats</h2>
+        <h2>Forecastings Guardats</h2>
         <div id="forecast-grid" class="forecast-grid"> <!--AQUI ES POSEN ELS FORECASTS--> </div>
     </div>
 
@@ -265,76 +206,6 @@
     }
 
     onLoadPage();
-
-    // Animated Counter Function
-    function animateCounter(element, target, duration = 2000) {
-        const start = 0;
-        const increment = target / (duration / 16);
-        let current = start;
-
-        const timer = setInterval(() => {
-            current += increment;
-            if (current >= target) {
-                element.textContent = Math.round(target);
-                clearInterval(timer);
-            } else {
-                element.textContent = Math.round(current);
-            }
-        }, 16);
-    }
-
-    // Update Stats Dashboard
-    function updateStats() {
-        const sensors_list = {{!active_sensors_list
-    }};
-    const modelsCount = sensors_list.length;
-
-    // Animate counters
-    setTimeout(() => {
-        animateCounter(document.getElementById('models-count'), modelsCount);
-        animateCounter(document.getElementById('energy-saved'), Math.floor(Math.random() * 500) + 100);
-        animateCounter(document.getElementById('predictions-made'), modelsCount * 24);
-    }, 300);
-    }
-
-    // Live Clock
-    function updateClock() {
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        document.getElementById('current-time').textContent = `${hours}:${minutes}`;
-    }
-
-    // Timeline Progress (shows current time in 24h schedule)
-    function updateTimeline() {
-        const now = new Date();
-        const hours = now.getHours();
-        const minutes = now.getMinutes();
-        const percentage = ((hours * 60 + minutes) / 1440) * 100;
-
-        const progress = document.getElementById('timeline-progress');
-        const marker = document.getElementById('timeline-marker');
-        const timeLabel = document.getElementById('timeline-time');
-
-        if (progress && marker) {
-            progress.style.width = percentage + '%';
-            marker.style.left = percentage + '%';
-            timeLabel.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        }
-    }
-
-    // Hero Animation on Load
-    window.addEventListener('load', () => {
-        document.querySelector('.hero-content').classList.add('fade-in');
-        updateStats();
-        updateClock();
-        updateTimeline();
-
-        // Update clock every minute
-        setInterval(updateClock, 60000);
-        // Update timeline every minute
-        setInterval(updateTimeline, 60000);
-    });
 
 </script>
 
