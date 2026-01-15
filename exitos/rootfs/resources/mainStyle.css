@@ -350,13 +350,16 @@ h2 {
     overflow: hidden;
 }
 
-.hero::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: url('../static/community.webp') no-repeat center center / contain;
+
+.hero-img {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    margin-top: 30px;
+    max-height: 350px;
+    border-radius: 12px;
     opacity: var(--hero-opacity);
-    z-index: 0;
+    transition: opacity 0.3s;
 }
 
 .hero>* {
