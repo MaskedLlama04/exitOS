@@ -95,8 +95,23 @@
                     <input type="hidden" name="sensors_id" id="sensors-input" value="">
 
 
+
+                    <!-- DATE RANGE SELECTION -->
+                    <h3> 4. Selecciona rang de dates de les dades</h3>
+                    <p> Opcional... </p>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <label style="display: flex; flex-direction: column; font-weight: bold;">Data Inici:
+                            <input type="date" id="startDate" name="startDate"
+                                style="padding: 8px; border-radius: 5px; border: 1px solid #ccc; margin-top: 5px;">
+                        </label>
+                        <label style="display: flex; flex-direction: column; font-weight: bold;">Data Fi:
+                            <input type="date" id="endDate" name="endDate"
+                                style="padding: 8px; border-radius: 5px; border: 1px solid #ccc; margin-top: 5px;">
+                        </label>
+                    </div>
+
                     <!-- CONFIGURAR MODEL -->
-                    <h3>4. Configura el model</h3>
+                    <h3>5. Configura el model</h3>
                     <label for="modelSelect">Algorisme:
                         <select class="form-select" name="model" id="modelSelect">
                             <option value="AUTO">Automàtic</option>
