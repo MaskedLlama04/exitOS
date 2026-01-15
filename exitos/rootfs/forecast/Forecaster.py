@@ -458,22 +458,25 @@ class Forecaster:
         return merged_data
 
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
-                         max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None):
+                         max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
+                         start_date=None, end_date=None):
         """
         Funció per crear, guardar i configurar el model de forecasting.
 
-        :param lon:
-        :param lat:
-        :param extra_sensors_df:
+        :param lon: Longitud de la ubicació
+        :param lat: Latitud de la ubicació
+        :param extra_sensors_df: Sensors addicionals per al model
         :param data: Dataframe amb datetime com a índex
-        :param sensors_id:
+        :param sensors_id: ID del sensor objectiu
         :param y: Nom de la columna amb la variable a predir
-        :param filename:
-        :param max_time:
-        :param escalat:
-        :param params:
-        :param algorithm:
+        :param filename: Nom del fitxer per guardar el model
+        :param max_time: Temps màxim d'entrenament
+        :param escalat: Mètode d'escalat de dades
+        :param params: Paràmetres del model
+        :param algorithm: Algorisme a utilitzar
         :param meteo_data: Dades meteorològiques de la data
+        :param start_date: Data d'inici per filtrar les dades (format: 'YYYY-MM-DD' o datetime). Si és None, s'usen totes les dades.
+        :param end_date: Data de fi per filtrar les dades (format: 'YYYY-MM-DD' o datetime). Si és None, s'usen totes les dades.
 
         """
 
@@ -481,6 +484,31 @@ class Forecaster:
         feature_selection = 'Tree'
         colinearity_remove_level = 0.9
         look_back = {-1: [25, 48]}
+
+        # Filtrar dades per rang de dates si s'especifica
+        if start_date is not None or end_date is not None:
+            if 'timestamp' not in data.columns:
+                logger.warning("⚠️ No es pot filtrar per dates: la columna 'timestamp' no existeix")
+            else:
+                data_copy = data.copy()
+                data_copy['timestamp'] = pd.to_datetime(data_copy['timestamp'])
+                
+                if start_date is not None:
+                    start_date_dt = pd.to_datetime(start_date)
+                    data_copy = data_copy[data_copy['timestamp'] >= start_date_dt]
+                    logger.info(f"📅 Filtrant dades des de: {start_date_dt.strftime('%Y-%m-%d')}")
+                
+                if end_date is not None:
+                    end_date_dt = pd.to_datetime(end_date)
+                    data_copy = data_copy[data_copy['timestamp'] <= end_date_dt]
+                    logger.info(f"📅 Filtrant dades fins a: {end_date_dt.strftime('%Y-%m-%d')}")
+                
+                if data_copy.empty:
+                    logger.error(f"❌ No hi ha dades en el rang especificat ({start_date} - {end_date})")
+                    return
+                
+                data = data_copy
+                logger.info(f"✅ Utilitzant {len(data)} registres després del filtratge")
 
         # Descarregar dades meteo si no es proporcionen
         if meteo_data is not None and not data.empty:
