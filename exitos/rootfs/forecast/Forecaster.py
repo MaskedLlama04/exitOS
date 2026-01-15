@@ -492,6 +492,9 @@ class Forecaster:
             else:
                 data_copy = data.copy()
                 data_copy['timestamp'] = pd.to_datetime(data_copy['timestamp'])
+                # Ensure timestamp is tz-naive for comparison
+                if data_copy['timestamp'].dt.tz is not None:
+                    data_copy['timestamp'] = data_copy['timestamp'].dt.tz_localize(None)
                 
                 if start_date is not None:
                     start_date_dt = pd.to_datetime(start_date)
