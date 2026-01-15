@@ -354,7 +354,7 @@ h2 {
     content: "";
     position: absolute;
     inset: 0;
-    background: url('../static/community.webp') no-repeat center center / cover;
+    background: url('../static/community.webp') no-repeat center center / contain;
     opacity: var(--hero-opacity);
     z-index: 0;
 }
