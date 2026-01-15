@@ -423,6 +423,14 @@ def train_model():
                 except ValueError:
                     config[key] = value
 
+    start_date = config.get("startDate")
+    if start_date == "": start_date = None
+    end_date = config.get("endDate")
+    if end_date == "": end_date = None
+
+    if "startDate" in config: config.pop("startDate")
+    if "endDate" in config: config.pop("endDate")
+
     sensors_id = config.get("sensorsId")
     scaled = config.get("scaled")
     model_name = config.get("modelName")
@@ -462,7 +470,7 @@ def train_model():
 
     sensors_df = database.get_data_from_sensor(sensors_id)
 
-    logger.info(f"Selected model: {selected_model}, Config: {config}")
+    logger.info(f"Selected model: {selected_model}, Config: {config}, Range: {start_date} - {end_date}")
 
     lat = optimalScheduler.latitude
     lon = optimalScheduler.longitude
@@ -477,7 +485,9 @@ def train_model():
                               meteo_data= meteo_data if meteo_data is True else None,
                               extra_sensors_df=extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon)
+                              lon=lon,
+                              start_date=start_date,
+                              end_date=end_date)
     else:
         forecast.create_model(data=sensors_df,
                               sensors_id=sensors_id,
@@ -489,7 +499,9 @@ def train_model():
                               meteo_data=meteo_data if meteo_data is True else None,
                               extra_sensors_df= extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon)
+                              lon=lon,
+                              start_date=start_date,
+                              end_date=end_date)
 
     return model_name
 
