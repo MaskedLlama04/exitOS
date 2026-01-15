@@ -492,7 +492,7 @@ class Forecaster:
             else:
                 data_copy = data.copy()
                 data_copy['timestamp'] = pd.to_datetime(data_copy['timestamp'])
-                # Ensure timestamp is tz-naive for comparison
+                # Mirem que les dades estiguin en format tz per a la comparació 
                 if data_copy['timestamp'].dt.tz is not None:
                     data_copy['timestamp'] = data_copy['timestamp'].dt.tz_localize(None)
                 
@@ -509,7 +509,8 @@ class Forecaster:
                 if data_copy.empty:
                     logger.error(f"❌ No hi ha dades en el rang especificat ({start_date} - {end_date})")
                     return
-                
+
+                # Aconseguim les dades filtrades i el sistema ens dirà quantes estem fent servir en total
                 data = data_copy
                 logger.info(f"✅ Utilitzant {len(data)} registres després del filtratge")
 
