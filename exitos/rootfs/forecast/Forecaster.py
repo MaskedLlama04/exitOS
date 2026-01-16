@@ -405,6 +405,15 @@ class Forecaster:
                         best_overall_model = best_model
                         best_overall_score = best_mae
 
+            if best_overall_model is None:
+                logger.error("❌ [DEBUG] No suitable model found!")
+            else:
+                 logger.info(f"✅ [DEBUG] Best Algorithm Found: {type(best_overall_model).__name__}")
+                 logger.info(f"✅ [DEBUG] Best Score (MAE): {best_overall_score}")
+                 # Try to log params if available
+                 if hasattr(best_overall_model, 'get_params'):
+                      logger.info(f"✅ [DEBUG] Best Params: {best_overall_model.get_params()}")
+
             return [best_overall_model, best_overall_score]
         else:
             raise ValueError('Paràmetres en format incorrecte!')
@@ -683,6 +692,8 @@ class Forecaster:
 
         # PAS 3 - Afegir variables derivades de l'índex temporal {dia, hora, mes, ...}
         df = self.timestamp_to_attrs(df, extra_vars)
+        
+        logger.info(f"🔍 [DEBUG] Forecast: Data prepared for prediction (Shape: {df.shape})")
 
         # PAS 4 - Eliminar colinearitats
         if colinearity_remove_level_to_drop:
@@ -719,6 +730,8 @@ class Forecaster:
         # future_index = [last_timestamp + timedelta(hours=i + 1) for i in range(future_steps)]
         future_index = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), end=end_time, freq='H',inclusive="left")
         future_df = pd.DataFrame(index=future_index)
+        
+        logger.info(f"🔍 [DEBUG] Forecast: Future Index generated (Start: {future_index[0]}, End: {future_index[-1]}, Count: {len(future_index)})")
 
         # atributs (hora, dia, festius...)
         future_df = self.timestamp_to_attrs(future_df, extra_vars)
@@ -737,6 +750,8 @@ class Forecaster:
 
         future_df = future_df.fillna(0)
         future_df = future_df[original_columns]
+        
+        logger.info(f"🔍 [DEBUG] Forecast: Future DataFrame prepared (Shape: {future_df.shape})")
 
         # scale
         if scaler:
@@ -753,6 +768,10 @@ class Forecaster:
             index=future_index,
             columns=[y]
         )
+        
+        logger.info(f"🔍 [DEBUG] Forecast: Prediction complete. Output shape: {forecast_output.shape}")
+        logger.info(f"🔍 [DEBUG] Forecast: Output (First 24):\n{forecast_output.head(24).to_string()}")
+
         out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
 
         final_prediction = pd.concat([out, forecast_output])
