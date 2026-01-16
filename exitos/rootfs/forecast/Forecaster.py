@@ -493,8 +493,11 @@ class Forecaster:
         logger.info(f"   - Input Data Head:\n{data.head()}")
         
         if meteo_data is not None:
-             logger.info(f"   - Meteo Data Shape: {meteo_data.shape}")
-             logger.info(f"   - Meteo Data Head:\n{meteo_data.head()}")
+             if isinstance(meteo_data, pd.DataFrame):
+                 logger.info(f"   - Meteo Data Shape: {meteo_data.shape}")
+                 logger.info(f"   - Meteo Data Head:\n{meteo_data.head()}")
+             else:
+                 logger.info(f"   - Meteo Data provided as flag: {meteo_data}")
         else:
              logger.info("   - No Meteo Data provided.")
 
