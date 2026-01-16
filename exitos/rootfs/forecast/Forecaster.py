@@ -485,6 +485,23 @@ class Forecaster:
         colinearity_remove_level = 0.9
         look_back = {-1: [25, 48]}
 
+        logger.info("*****************************************************************")
+        logger.info(f"🔍 [DEBUG] Starting create_model")
+        logger.info(f"   - Sensors ID: {sensors_id}")
+        logger.info(f"   - Target Variable (y): {y}")
+        logger.info(f"   - Input Data Shape: {data.shape}")
+        logger.info(f"   - Input Data Head:\n{data.head()}")
+        
+        if meteo_data is not None:
+             logger.info(f"   - Meteo Data Shape: {meteo_data.shape}")
+             logger.info(f"   - Meteo Data Head:\n{meteo_data.head()}")
+        else:
+             logger.info("   - No Meteo Data provided.")
+
+        if extra_sensors_df is not None:
+             logger.info(f"   - Extra Sensors Count: {len(extra_sensors_df)}")
+
+
         # Filtrar dades per rang de dates si s'especifica
         if start_date is not None or end_date is not None:
             if 'timestamp' not in data.columns:
@@ -547,6 +564,12 @@ class Forecaster:
         #PREP PAS 0 - preparar els df de meteo-data i dades extra
         merged_data = self.prepare_dataframes(data, meteo_data, extra_sensors_df)
         merged_data.bfill(inplace=True)
+        
+        logger.info(f"🔍 [DEBUG] After prepare_dataframes & bfill:")
+        logger.info(f"   - Merged Data Shape: {merged_data.shape}")
+        logger.info(f"   - Merged Data Head:\n{merged_data.head()}")
+        logger.info(f"   - Merged Data Start: {merged_data.index.min()} | End: {merged_data.index.max()}")
+
 
         if merged_data.empty:
             logger.error(f"\n ************* \n ❌ No hi ha dades per a realitzar el Forecast \n *************")
@@ -554,9 +577,17 @@ class Forecaster:
 
         # PAS 1 - Fer el Windowing
         dad = self.do_windowing(merged_data, look_back)
+        logger.info(f"🔍 [DEBUG] After Windowing:")
+        logger.info(f"   - Shape: {dad.shape}")
+        logger.info(f"   - Columns: {dad.columns.tolist()}")
+        logger.info(f"   - Head:\n{dad.head()}")
+
 
         # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
         dad = self.timestamp_to_attrs(dad, extra_vars)
+        logger.info(f"🔍 [DEBUG] After Timestamp Attributes:")
+        logger.info(f"   - Shape: {dad.shape}")
+
 
         # PAS 3 - Treure Col·linearitats
         [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
