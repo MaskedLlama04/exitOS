@@ -490,12 +490,12 @@ class Forecaster:
         logger.info(f"   - Sensors ID: {sensors_id}")
         logger.info(f"   - Target Variable (y): {y}")
         logger.info(f"   - Input Data Shape: {data.shape}")
-        logger.info(f"   - Input Data:\n{data.to_string()}")
+        logger.info(f"   - Input Data (First 100):\n{data.head(100).to_string()}")
         
         if meteo_data is not None:
              if isinstance(meteo_data, pd.DataFrame):
                  logger.info(f"   - Meteo Data Shape: {meteo_data.shape}")
-                 logger.info(f"   - Meteo Data:\n{meteo_data.to_string()}")
+                 logger.info(f"   - Meteo Data (First 100):\n{meteo_data.head(100).to_string()}")
              else:
                  logger.info(f"   - Meteo Data provided as flag: {meteo_data}")
         else:
@@ -570,7 +570,7 @@ class Forecaster:
         
         logger.info(f"🔍 [DEBUG] After prepare_dataframes & bfill:")
         logger.info(f"   - Merged Data Shape: {merged_data.shape}")
-        logger.info(f"   - Merged Data:\n{merged_data.to_string()}")
+        logger.info(f"   - Merged Data (First 100):\n{merged_data.head(100).to_string()}")
         logger.info(f"   - Merged Data Start: {merged_data.index.min()} | End: {merged_data.index.max()}")
 
 
@@ -583,14 +583,14 @@ class Forecaster:
         logger.info(f"🔍 [DEBUG] After Windowing:")
         logger.info(f"   - Shape: {dad.shape}")
         logger.info(f"   - Columns: {dad.columns.tolist()}")
-        logger.info(f"   - Data:\n{dad.to_string()}")
+        logger.info(f"   - Data (First 100):\n{dad.head(100).to_string()}")
 
 
         # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
         dad = self.timestamp_to_attrs(dad, extra_vars)
         logger.info(f"🔍 [DEBUG] After Timestamp Attributes:")
         logger.info(f"   - Shape: {dad.shape}")
-        logger.info(f"   - Data:\n{dad.to_string()}")
+        logger.info(f"   - Data (First 100):\n{dad.head(100).to_string()}")
 
 
         # PAS 3 - Treure Col·linearitats
@@ -599,7 +599,7 @@ class Forecaster:
         logger.info(f"🔍 [DEBUG] After Colinearity Removal:")
         logger.info(f"   - Dropped Columns: {to_drop}")
         logger.info(f"   - Shape: {dad.shape}")
-        logger.info(f"   - Data:\n{dad.to_string()}")
+        logger.info(f"   - Data (First 100):\n{dad.head(100).to_string()}")
 
         # PAS 4 - Treure NaN
         dad.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -622,11 +622,12 @@ class Forecaster:
         # Check if X_new is numpy array or dataframe (get_attribs returns array often, but depends on method)
         # If array, convert to df for printing or just print
         if isinstance(X_new, pd.DataFrame):
-             logger.info(f"   - X_new:\n{X_new.to_string()}")
+             logger.info(f"   - X_new (First 100):\n{X_new.head(100).to_string()}")
         else:
-             logger.info(f"   - X_new (Array):\n{X_new}")
+             # Numpy array slicing
+             logger.info(f"   - X_new (Array, First 100 rows):\n{X_new[:100]}")
         logger.info(f"   - y_new Shape: {y_new.shape}")
-        logger.info(f"   - y_new:\n{y_new.to_string()}")
+        logger.info(f"   - y_new (First 100):\n{y_new.head(100).to_string()}")
 
         [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
 
