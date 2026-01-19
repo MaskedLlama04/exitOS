@@ -616,9 +616,8 @@ class Forecaster:
         logger.info(f"   - Shape: {dad.shape}")
         logger.info(f"   - NaNs totals: {dad.isna().sum().sum()}")
 
-        # ============================================================
-        # SOLUCIÓ 2: ELIMINA FILES AMB MASSA NaNs
-        # ============================================================
+        # ELIMINA FILES AMB MASSA NaNs
+        
         nan_threshold = 0.3  # Si més del 30% són NaNs, elimina la fila
         before_rows = len(dad)
         
@@ -685,10 +684,6 @@ class Forecaster:
         [model_select, X_new, y_new] = self.get_attribs(X, y, feature_selection)
 
         # PAS 8 - Crear el model
-        logger.info(f"🔎 [DEBUG] Final Model Inputs:")
-        logger.info(f"   - X_new Shape: {X_new.shape}")
-        logger.info(f"   - y_new Shape: {y_new.shape}")
-
         [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
 
         # PAS 9 - Guardar el model
@@ -759,10 +754,8 @@ class Forecaster:
 
         # PAS 3 - Afegir variables derivades de l'índex temporal {dia, hora, mes, ...}
         df = self.timestamp_to_attrs(df, extra_vars)
-        
+
         logger.info(f"🔎 [DEBUG] Forecast: Data prepared for prediction (Shape: {df.shape})")
-        
-        logger.info(f"🔍 [DEBUG] Forecast: Data prepared for prediction (Shape: {df.shape})")
 
         # PAS 4 - Eliminar colinearitats
         if colinearity_remove_level_to_drop:
@@ -800,8 +793,6 @@ class Forecaster:
         future_index = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), end=end_time, freq='H',inclusive="left")
         future_df = pd.DataFrame(index=future_index)
         
-        logger.info(f"🔍 [DEBUG] Forecast: Future Index generated (Start: {future_index[0]}, End: {future_index[-1]}, Count: {len(future_index)})")
-
         # atributs (hora, dia, festius...)
         future_df = self.timestamp_to_attrs(future_df, extra_vars)
 
@@ -837,9 +828,6 @@ class Forecaster:
             index=future_index,
             columns=[y]
         )
-        
-        logger.info(f"🔍 [DEBUG] Forecast: Prediction complete. Output shape: {forecast_output.shape}")
-        logger.info(f"🔍 [DEBUG] Forecast: Output (First 24):\n{forecast_output.head(24).to_string()}")
 
         out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
 
