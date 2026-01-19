@@ -722,10 +722,10 @@ class Forecaster:
             logger.debug('Model guardat! Score: ' + str(score))
 
     def forecast(self, data, y, model, future_steps=48):
-    """
-    Forecast autoregressiu: cada predicció alimenta el següent pas.
-    """
-
+        """
+        Forecast autoregressiu: cada predicció alimenta el següent pas.
+        """
+    
         # Recuperem configuració del model
         model_select = self.db.get('model_select', [])
         scaler = self.db.get('scaler')
@@ -741,7 +741,6 @@ class Forecaster:
     
         # Historial viu que anirem ampliant
         history = data.copy()
-    
         predictions = []
     
         # ============================================================
@@ -752,13 +751,13 @@ class Forecaster:
             # PAS 1 - Windowing
             df_step = self.do_windowing(history, look_back)
     
-            # PAS 1.1 - Neteja de NaNs (mateixa lògica que create_model)
+            # PAS 1.1 - Neteja de NaNs
             nan_threshold = 0.3
             nan_per_row = df_step.isna().sum(axis=1) / len(df_step.columns)
             df_step = df_step[nan_per_row <= nan_threshold]
             df_step = df_step.bfill().ffill()
     
-            # PAS 2 - Variables temporals (hora, dia, mes, festius)
+            # PAS 2 - Variables temporals
             df_step = self.timestamp_to_attrs(df_step, extra_vars)
     
             # PAS 3 - Eliminar colinearitats
@@ -771,8 +770,6 @@ class Forecaster:
     
             # PAS 4 - Separar X / y
             X_step = df_step.drop(columns=[y])
-    
-            # Només l'última fila (instant a predir)
             X_step = X_step.iloc[[-1]]
     
             # PAS 5 - Escalat
@@ -787,11 +784,11 @@ class Forecaster:
             if model_select:
                 X_step = model_select.transform(X_step)
     
-            # PAS 7 - Predicció d'una hora
+            # PAS 7 - Predicció
             y_pred = float(model.predict(X_step)[0])
             predictions.append(y_pred)
     
-            # PAS 8 - Afegir la predicció a l'historial
+            # PAS 8 - Afegir a l'historial
             next_timestamp = history.index[-1] + pd.Timedelta(hours=1)
     
             new_row = history.iloc[[-1]].copy()
@@ -801,7 +798,7 @@ class Forecaster:
             history = pd.concat([history, new_row])
     
         # ============================================================
-        # Construcció del DataFrame final de predicció
+        # Construcció del DataFrame final
         # ============================================================
         future_index = pd.date_range(
             start=data.index[-1] + pd.Timedelta(hours=1),
@@ -816,7 +813,6 @@ class Forecaster:
         )
     
         return forecast_df, real_values_column, self.db['sensors_id']
-
 
     def save_model(self, model_filename):
         """
