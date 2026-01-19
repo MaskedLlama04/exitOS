@@ -419,93 +419,93 @@ class Forecaster:
             raise ValueError('Paràmetres en format incorrecte!')
 
     @staticmethod
-def prepare_dataframes(sensor, meteo, extra_sensors):
-    """
-    Prepara els df juntant-los en un de sol amb millor gestió de NaNs
-    """
-    # Normalitza timestamps del sensor principal
-    sensor = sensor.copy()
-    sensor['timestamp'] = pd.to_datetime(sensor['timestamp']).dt.tz_localize(None).dt.floor('h')
-    sensor = sensor.drop_duplicates(subset=['timestamp'])
-    sensor = sensor.sort_values('timestamp')
-    
-    # CRÍTIC: Crea un rang temporal complet (sense gaps)
-    date_range = pd.date_range(
-        start=sensor['timestamp'].min(),
-        end=sensor['timestamp'].max(),
-        freq='h'
-    )
-    
-    # Crea un DataFrame base amb totes les hores
-    base_df = pd.DataFrame({'timestamp': date_range})
-    
-    # Merge amb el sensor (això omplirà gaps amb NaN que després interpolarem)
-    merged_data = pd.merge(base_df, sensor, on='timestamp', how='left')
-    
-    # Interpola valors del sensor principal ABANS de fer altres merges
-    if 'value' in merged_data.columns:
-        nan_count = merged_data['value'].isna().sum()
-        if nan_count > 0:
-            logger.info(f"   📊 Interpolant {nan_count} NaNs del sensor principal")
-            merged_data['value'] = merged_data['value'].interpolate(method='linear', limit_direction='both')
-            # Si encara queden NaNs, emplena amb forward/backward fill
-            merged_data['value'] = merged_data['value'].ffill().bfill()
-    
-    # Afegeix meteo
-    if meteo is not None:
-        meteo = meteo.copy()
-        meteo['timestamp'] = pd.to_datetime(meteo['timestamp']).dt.tz_localize(None).dt.floor('h')
-        meteo = meteo.drop_duplicates(subset=['timestamp'])
+    def prepare_dataframes(sensor, meteo, extra_sensors):
+        """
+        Prepara els df juntant-los en un de sol amb millor gestió de NaNs
+        """
+        # Normalitza timestamps del sensor principal
+        sensor = sensor.copy()
+        sensor['timestamp'] = pd.to_datetime(sensor['timestamp']).dt.tz_localize(None).dt.floor('h')
+        sensor = sensor.drop_duplicates(subset=['timestamp'])
+        sensor = sensor.sort_values('timestamp')
         
-        # LEFT join per mantenir totes les files del sensor
-        merged_data = pd.merge(merged_data, meteo, on='timestamp', how='left')
+        # CRÍTIC: Crea un rang temporal complet (sense gaps)
+        date_range = pd.date_range(
+            start=sensor['timestamp'].min(),
+            end=sensor['timestamp'].max(),
+            freq='h'
+        )
         
-        # Interpola dades meteo
-        meteo_cols = [col for col in meteo.columns if col != 'timestamp']
-        for col in meteo_cols:
-            if col in merged_data.columns:
+        # Crea un DataFrame base amb totes les hores
+        base_df = pd.DataFrame({'timestamp': date_range})
+        
+        # Merge amb el sensor (això omplirà gaps amb NaN que després interpolarem)
+        merged_data = pd.merge(base_df, sensor, on='timestamp', how='left')
+        
+        # Interpola valors del sensor principal ABANS de fer altres merges
+        if 'value' in merged_data.columns:
+            nan_count = merged_data['value'].isna().sum()
+            if nan_count > 0:
+                logger.info(f"   📊 Interpolant {nan_count} NaNs del sensor principal")
+                merged_data['value'] = merged_data['value'].interpolate(method='linear', limit_direction='both')
+                # Si encara queden NaNs, emplena amb forward/backward fill
+                merged_data['value'] = merged_data['value'].ffill().bfill()
+        
+        # Afegeix meteo
+        if meteo is not None:
+            meteo = meteo.copy()
+            meteo['timestamp'] = pd.to_datetime(meteo['timestamp']).dt.tz_localize(None).dt.floor('h')
+            meteo = meteo.drop_duplicates(subset=['timestamp'])
+            
+            # LEFT join per mantenir totes les files del sensor
+            merged_data = pd.merge(merged_data, meteo, on='timestamp', how='left')
+            
+            # Interpola dades meteo
+            meteo_cols = [col for col in meteo.columns if col != 'timestamp']
+            for col in meteo_cols:
+                if col in merged_data.columns:
+                    nan_count = merged_data[col].isna().sum()
+                    if nan_count > 0:
+                        logger.info(f"   🌤️ Interpolant {nan_count} NaNs de {col}")
+                        merged_data[col] = merged_data[col].interpolate(method='linear', limit_direction='both')
+                        merged_data[col] = merged_data[col].ffill().bfill()
+        
+        # Afegeix sensors extra
+        if extra_sensors is not None and len(extra_sensors) > 0:
+            for sensor_name, sensor_df in extra_sensors.items():
+                sensor_df = sensor_df.copy()
+                sensor_df['timestamp'] = pd.to_datetime(sensor_df['timestamp']).dt.tz_localize(None).dt.floor('h')
+                sensor_df = sensor_df.drop_duplicates(subset=['timestamp'])
+                
+                # Renombra columnes per evitar conflictes (si té 'value')
+                if 'value' in sensor_df.columns:
+                    sensor_df = sensor_df.rename(columns={'value': f'value_{sensor_name}'})
+                    value_col = f'value_{sensor_name}'
+                else:
+                    value_col = None
+                
+                merged_data = pd.merge(merged_data, sensor_df, on='timestamp', how='left')
+                
+                # Interpola el sensor extra
+                if value_col and value_col in merged_data.columns:
+                    nan_count = merged_data[value_col].isna().sum()
+                    if nan_count > 0:
+                        logger.info(f"   🔧 Interpolant {nan_count} NaNs de {sensor_name}")
+                        merged_data[value_col] = merged_data[value_col].interpolate(method='linear', limit_direction='both')
+                        merged_data[value_col] = merged_data[value_col].ffill().bfill()
+        
+        # Verifica NaNs finals
+        total_nans = merged_data.isna().sum().sum()
+        if total_nans > 0:
+            logger.warning(f"⚠️ Encara queden {total_nans} NaNs després de preprocessing")
+            for col in merged_data.columns:
                 nan_count = merged_data[col].isna().sum()
                 if nan_count > 0:
-                    logger.info(f"   🌤️ Interpolant {nan_count} NaNs de {col}")
-                    merged_data[col] = merged_data[col].interpolate(method='linear', limit_direction='both')
-                    merged_data[col] = merged_data[col].ffill().bfill()
-    
-    # Afegeix sensors extra
-    if extra_sensors is not None and len(extra_sensors) > 0:
-        for sensor_name, sensor_df in extra_sensors.items():
-            sensor_df = sensor_df.copy()
-            sensor_df['timestamp'] = pd.to_datetime(sensor_df['timestamp']).dt.tz_localize(None).dt.floor('h')
-            sensor_df = sensor_df.drop_duplicates(subset=['timestamp'])
-            
-            # Renombra columnes per evitar conflictes (si té 'value')
-            if 'value' in sensor_df.columns:
-                sensor_df = sensor_df.rename(columns={'value': f'value_{sensor_name}'})
-                value_col = f'value_{sensor_name}'
-            else:
-                value_col = None
-            
-            merged_data = pd.merge(merged_data, sensor_df, on='timestamp', how='left')
-            
-            # Interpola el sensor extra
-            if value_col and value_col in merged_data.columns:
-                nan_count = merged_data[value_col].isna().sum()
-                if nan_count > 0:
-                    logger.info(f"   🔧 Interpolant {nan_count} NaNs de {sensor_name}")
-                    merged_data[value_col] = merged_data[value_col].interpolate(method='linear', limit_direction='both')
-                    merged_data[value_col] = merged_data[value_col].ffill().bfill()
-    
-    # Verifica NaNs finals
-    total_nans = merged_data.isna().sum().sum()
-    if total_nans > 0:
-        logger.warning(f"⚠️ Encara queden {total_nans} NaNs després de preprocessing")
-        for col in merged_data.columns:
-            nan_count = merged_data[col].isna().sum()
-            if nan_count > 0:
-                logger.warning(f"      {col}: {nan_count} NaNs ({nan_count/len(merged_data)*100:.1f}%)")
-    else:
-        logger.info(f"✅ Cap NaN després de preprocessing!")
-    
-    return merged_data
+                    logger.warning(f"      {col}: {nan_count} NaNs ({nan_count/len(merged_data)*100:.1f}%)")
+        else:
+            logger.info(f"✅ Cap NaN després de preprocessing!")
+        
+        return merged_data
 
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
                          max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
