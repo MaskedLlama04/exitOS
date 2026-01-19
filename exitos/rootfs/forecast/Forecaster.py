@@ -723,96 +723,117 @@ class Forecaster:
 
     def forecast(self, data, y, model, future_steps=48):
         """
-        Forecast autoregressiu: cada predicció alimenta el següent pas.
+        :return:
         """
-    
-        # Recuperem configuració del model
+
+        # PAS 1 - Obtenir els valors del model
         model_select = self.db.get('model_select', [])
-        scaler = self.db.get('scaler')
+        scaler = self.db['scaler']
         colinearity_remove_level_to_drop = self.db.get('colinearity_remove_level_to_drop', [])
         extra_vars = self.db.get('extra_vars', {})
         look_back = self.db.get('look_back', {-1: [25, 48]})
-    
-        # Guardem valors reals (per a la part històrica del plot)
-        if y not in data.columns:
+
+        # PAS 2 - Aplicar el windowing
+        df = self.do_windowing(data, look_back)
+
+        # ============================================================
+        # Neteja NaNs igual que a create_model
+        # ============================================================
+        nan_threshold = 0.3
+        before_rows = len(df)
+        nan_per_row = df.isna().sum(axis=1) / len(df.columns)
+        df = df[nan_per_row <= nan_threshold]
+        after_rows = len(df)
+        
+        if before_rows - after_rows > 0:
+            logger.info(f"📊 Forecast: Eliminades {before_rows - after_rows} files amb >{nan_threshold*100}% NaNs")
+        
+        df = df.bfill().ffill()
+        logger.info(f"🔎 [DEBUG] Forecast: NaNs després neteja: {df.isna().sum().sum()}")
+        # ============================================================
+
+        # PAS 3 - Afegir variables derivades de l'índex temporal {dia, hora, mes, ...}
+        df = self.timestamp_to_attrs(df, extra_vars)
+
+        logger.info(f"🔎 [DEBUG] Forecast: Data prepared for prediction (Shape: {df.shape})")
+
+        # PAS 4 - Eliminar colinearitats
+        if colinearity_remove_level_to_drop:
+            existing_cols = [col for col in colinearity_remove_level_to_drop if col in df.columns]
+            df.drop(existing_cols, axis=1, inplace=True)
+
+        # PAS 5 - Eliminar la y
+        if y in df.columns:
+            real_values_column = df[y]
+            del df[y]
+        else:
             raise ValueError(f"Columna {y} no trobada en el dataset")
-    
-        real_values_column = data[y].copy()
-    
-        # Historial viu que anirem ampliant
-        history = data.copy()
-        predictions = []
-    
-        # ============================================================
-        # FORECAST AUTOREGRESSIU PAS A PAS
-        # ============================================================
-        for step in range(future_steps):
-    
-            # PAS 1 - Windowing
-            df_step = self.do_windowing(history, look_back)
-    
-            # PAS 1.1 - Neteja de NaNs
-            nan_threshold = 0.3
-            nan_per_row = df_step.isna().sum(axis=1) / len(df_step.columns)
-            df_step = df_step[nan_per_row <= nan_threshold]
-            df_step = df_step.bfill().ffill()
-    
-            # PAS 2 - Variables temporals
-            df_step = self.timestamp_to_attrs(df_step, extra_vars)
-    
-            # PAS 3 - Eliminar colinearitats
-            if colinearity_remove_level_to_drop:
-                cols_to_drop = [
-                    col for col in colinearity_remove_level_to_drop
-                    if col in df_step.columns
-                ]
-                df_step.drop(cols_to_drop, axis=1, inplace=True)
-    
-            # PAS 4 - Separar X / y
-            X_step = df_step.drop(columns=[y])
-            X_step = X_step.iloc[[-1]]
-    
-            # PAS 5 - Escalat
-            if scaler:
-                X_step = pd.DataFrame(
-                    scaler.transform(X_step),
-                    index=X_step.index,
-                    columns=X_step.columns
-                )
-    
-            # PAS 6 - Selecció de features
-            if model_select:
-                X_step = model_select.transform(X_step)
-    
-            # PAS 7 - Predicció
-            y_pred = float(model.predict(X_step)[0])
-            predictions.append(y_pred)
-    
-            # PAS 8 - Afegir a l'historial
-            next_timestamp = history.index[-1] + pd.Timedelta(hours=1)
-    
-            new_row = history.iloc[[-1]].copy()
-            new_row.index = [next_timestamp]
-            new_row[y] = y_pred
-    
-            history = pd.concat([history, new_row])
-    
-        # ============================================================
-        # Construcció del DataFrame final
-        # ============================================================
-        future_index = pd.date_range(
-            start=data.index[-1] + pd.Timedelta(hours=1),
-            periods=future_steps,
-            freq='H'
-        )
-    
-        forecast_df = pd.DataFrame(
-            predictions,
+
+        # PAS 6 - Elinimar els NaN
+        if df.dropna().any().any():
+            df.bfill(inplace=True)
+
+        # PAS 7 - Escalar les dades
+        if scaler:
+            # df.columns = [col.replace('value', 'state') for col in df.columns]
+            df = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
+
+        # PAS 8 - Seleccionar característiques a usar segons el selector del model
+        original_columns = df.columns
+        if model_select:
+            df = df.fillna(0)
+            df_transformed = pd.DataFrame(model_select.transform(df), index=df.index)
+            # df_transformed = df_transformed.fillna(0)
+
+        # PAS 9 - Preparar timestamps futurs
+        last_timestamp = data.index[-1]
+        tomorrow = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
+        end_time = tomorrow + pd.Timedelta(days=2)
+        # future_index = [last_timestamp + timedelta(hours=i + 1) for i in range(future_steps)]
+        future_index = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), end=end_time, freq='H',inclusive="left")
+        future_df = pd.DataFrame(index=future_index)
+        
+        # atributs (hora, dia, festius...)
+        future_df = self.timestamp_to_attrs(future_df, extra_vars)
+
+        # NaN
+
+        missing_cols = [col for col in original_columns if col not in future_df.columns]
+
+        if missing_cols:
+            new_cols_df = pd.DataFrame({
+                col: [df[col].iloc[-1] if col in df.columns else 0 for _ in range(len(future_df))]
+                for col in missing_cols
+            }, index = future_df.index)
+
+            future_df = pd.concat([future_df, new_cols_df], axis=1)
+
+        future_df = future_df.fillna(0)
+        future_df = future_df[original_columns]
+        
+        logger.info(f"🔍 [DEBUG] Forecast: Future DataFrame prepared (Shape: {future_df.shape})")
+
+        # scale
+        if scaler:
+            future_df = pd.DataFrame(scaler.transform(future_df), index=future_df.index, columns=original_columns)
+
+        # feature selection
+        if model_select:
+            future_df = model_select.transform(future_df)
+
+        # convert to numpy and predict
+        future_array = np.array([[float(x) for x in row] for row in future_df])
+        forecast_output = pd.DataFrame(
+            model.predict(future_array),
             index=future_index,
             columns=[y]
         )
-    
-        return forecast_df, real_values_column, self.db['sensors_id']
+
+        out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
+
+        final_prediction = pd.concat([out, forecast_output])
+
+        return final_prediction, real_values_column,  self.db['sensors_id']
 
     def save_model(self, model_filename):
         """
