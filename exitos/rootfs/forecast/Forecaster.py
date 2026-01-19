@@ -508,8 +508,8 @@ class Forecaster:
         return merged_data
 
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
-                         max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
-                         start_date=None, end_date=None):
+                     max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
+                     start_date=None, end_date=None):
         """
         Funció per crear, guardar i configurar el model de forecasting.
 
@@ -527,204 +527,204 @@ class Forecaster:
         :param meteo_data: Dades meteorològiques de la data
         :param start_date: Data d'inici per filtrar les dades (format: 'YYYY-MM-DD' o datetime). Si és None, s'usen totes les dades.
         :param end_date: Data de fi per filtrar les dades (format: 'YYYY-MM-DD' o datetime). Si és None, s'usen totes les dades.
-
         """
 
         extra_vars = {'variables': ['Dia', 'Hora', 'Mes'], 'festius': ['ES', 'CT']}
-    feature_selection = 'Tree'
-    colinearity_remove_level = 0.9
-    look_back = {-1: [25, 48]}
+        feature_selection = 'Tree'
+        colinearity_remove_level = 0.9
+        look_back = {-1: [25, 48]}
 
-    logger.info("*****************************************************************")
-    logger.info(f"🔎 [DEBUG] Starting create_model")
-    logger.info(f"   - Sensors ID: {sensors_id}")
-    logger.info(f"   - Target Variable (y): {y}")
-    logger.info(f"   - Input Data Shape: {data.shape}")
+        logger.info("*****************************************************************")
+        logger.info(f"🔎 [DEBUG] Starting create_model")
+        logger.info(f"   - Sensors ID: {sensors_id}")
+        logger.info(f"   - Target Variable (y): {y}")
+        logger.info(f"   - Input Data Shape: {data.shape}")
 
-    # Filtrar dades per rang de dates si s'especifica
-    if start_date is not None or end_date is not None:
-        if 'timestamp' not in data.columns:
-            logger.warning("⚠️ No es pot filtrar per dates: la columna 'timestamp' no existeix")
+        # Filtrar dades per rang de dates si s'especifica
+        if start_date is not None or end_date is not None:
+            if 'timestamp' not in data.columns:
+                logger.warning("⚠️ No es pot filtrar per dates: la columna 'timestamp' no existeix")
+            else:
+                data_copy = data.copy()
+                data_copy['timestamp'] = pd.to_datetime(data_copy['timestamp'])
+                # Mirem que les dades estiguin en format tz per a la comparació 
+                if data_copy['timestamp'].dt.tz is not None:
+                    data_copy['timestamp'] = data_copy['timestamp'].dt.tz_localize(None)
+                
+                if start_date is not None:
+                    start_date_dt = pd.to_datetime(start_date)
+                    data_copy = data_copy[data_copy['timestamp'] >= start_date_dt]
+                    logger.info(f"📅 Filtrant dades des de: {start_date_dt.strftime('%Y-%m-%d')}")
+                
+                if end_date is not None:
+                    end_date_dt = pd.to_datetime(end_date)
+                    data_copy = data_copy[data_copy['timestamp'] <= end_date_dt]
+                    logger.info(f"📅 Filtrant dades fins a: {end_date_dt.strftime('%Y-%m-%d')}")
+                
+                if data_copy.empty:
+                    logger.error(f"❌ No hi ha dades en el rang especificat ({start_date} - {end_date})")
+                    return
+
+                # Aconseguim les dades filtrades i el sistema ens dirà quantes estem fent servir en total
+                data = data_copy
+                logger.info(f"✅ Utilitzant {len(data)} registres després del filtratge")
+
+        # Descarregar dades meteo si no es proporcionen
+        if meteo_data is not None and not data.empty:
+            start_date = data['timestamp'].min().strftime("%Y-%m-%d")
+            end_date = data['timestamp'].max().strftime("%Y-%m-%d")
+
+            logger.info(f"⛅ Descarregant dades meteo històriques de {start_date} a {end_date}")
+
+            url = (
+                f"https://archive-api.open-meteo.com/v1/archive"
+                f"?latitude={lat}&longitude={lon}"
+                f"&start_date={start_date}&end_date={end_date}"
+                f"&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,apparent_temperature,"
+                f"precipitation,rain,weathercode,pressure_msl,surface_pressure,cloudcover,"
+                f"cloudcover_low,cloudcover_mid,cloudcover_high,et0_fao_evapotranspiration,"
+                f"vapor_pressure_deficit,windspeed_10m,windspeed_100m,winddirection_10m,"
+                f"winddirection_100m,windgusts_10m,shortwave_radiation,direct_radiation,"
+                f"diffuse_radiation,direct_normal_irradiance,terrestrial_radiation"
+            )
+
+            try:
+                response = requests.get(url).json()
+                hourly = response.get("hourly", {})
+                timestamps = pd.to_datetime(hourly["time"])
+                meteo_data = pd.DataFrame(hourly)
+                meteo_data["timestamp"] = timestamps
+                meteo_data.drop(columns=["time"], inplace=True)
+            except Exception as e:
+                logger.error(f"❌ No s'han pogut descarregar les dades meteo històriques: {e}")
+                meteo_data = None
+
+        # PREP PAS 0 - preparar els df de meteo-data i dades extra
+        merged_data = self.prepare_dataframes(data, meteo_data, extra_sensors_df)
+        
+        logger.info(f"🔎 [DEBUG] After prepare_dataframes:")
+        logger.info(f"   - Merged Data Shape: {merged_data.shape}")
+        logger.info(f"   - NaNs totals: {merged_data.isna().sum().sum()}")
+
+        if merged_data.empty:
+            logger.error(f"\n ************* \n ❌ No hi ha dades per a realitzar el Forecast \n *************")
+            return
+
+        # PAS 1 - Fer el Windowing
+        dad = self.do_windowing(merged_data, look_back)
+        logger.info(f"🔎 [DEBUG] After Windowing:")
+        logger.info(f"   - Shape: {dad.shape}")
+        logger.info(f"   - NaNs totals: {dad.isna().sum().sum()}")
+
+        # ============================================================
+        # SOLUCIÓ 2: ELIMINA FILES AMB MASSA NaNs
+        # ============================================================
+        nan_threshold = 0.3  # Si més del 30% són NaNs, elimina la fila
+        before_rows = len(dad)
+        
+        # Calcula percentatge de NaNs per fila
+        nan_per_row = dad.isna().sum(axis=1) / len(dad.columns)
+        dad = dad[nan_per_row <= nan_threshold]
+        
+        after_rows = len(dad)
+        eliminated = before_rows - after_rows
+        
+        if eliminated > 0:
+            logger.warning(f"⚠️ Eliminades {eliminated} files amb >{nan_threshold*100}% NaNs")
         else:
-            data_copy = data.copy()
-            data_copy['timestamp'] = pd.to_datetime(data_copy['timestamp'])
-            if data_copy['timestamp'].dt.tz is not None:
-                data_copy['timestamp'] = data_copy['timestamp'].dt.tz_localize(None)
-            
-            if start_date is not None:
-                start_date_dt = pd.to_datetime(start_date)
-                data_copy = data_copy[data_copy['timestamp'] >= start_date_dt]
-                logger.info(f"📅 Filtrant dades des de: {start_date_dt.strftime('%Y-%m-%d')}")
-            
-            if end_date is not None:
-                end_date_dt = pd.to_datetime(end_date)
-                data_copy = data_copy[data_copy['timestamp'] <= end_date_dt]
-                logger.info(f"📅 Filtrant dades fins a: {end_date_dt.strftime('%Y-%m-%d')}")
-            
-            if data_copy.empty:
-                logger.error(f"❌ No hi ha dades en el rang especificat ({start_date} - {end_date})")
-                return
+            logger.info(f"✅ Cap fila eliminada (totes tenen <{nan_threshold*100}% NaNs)")
+        
+        # Després, omple els NaNs restants amb bfill/ffill
+        nans_before = dad.isna().sum().sum()
+        logger.info(f"   NaNs abans bfill: {nans_before}")
+        
+        dad = dad.bfill().ffill()
+        
+        nans_after = dad.isna().sum().sum()
+        logger.info(f"   NaNs després bfill: {nans_after}")
+        
+        if nans_after > 0:
+            logger.error(f"❌ ALERTA: Encara queden {nans_after} NaNs després de bfill/ffill!")
+            logger.error("   Columnes amb NaNs:")
+            for col in dad.columns:
+                nan_count = dad[col].isna().sum()
+                if nan_count > 0:
+                    logger.error(f"      {col}: {nan_count}")
+        # ============================================================
 
-            data = data_copy
-            logger.info(f"✅ Utilitzant {len(data)} registres després del filtratge")
+        # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
+        dad = self.timestamp_to_attrs(dad, extra_vars)
+        logger.info(f"🔎 [DEBUG] After Timestamp Attributes:")
+        logger.info(f"   - Shape: {dad.shape}")
 
-    # Descarregar dades meteo si no es proporcionen
-    if meteo_data is not None and not data.empty:
-        start_date = data['timestamp'].min().strftime("%Y-%m-%d")
-        end_date = data['timestamp'].max().strftime("%Y-%m-%d")
+        # PAS 3 - Treure Col·linearitats
+        [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
+        colinearity_remove_level_to_drop = to_drop
+        logger.info(f"🔎 [DEBUG] After Colinearity Removal:")
+        logger.info(f"   - Dropped Columns: {to_drop}")
+        logger.info(f"   - Shape: {dad.shape}")
 
-        logger.info(f"⛅ Descarregant dades meteo històriques de {start_date} a {end_date}")
+        # PAS 4 - Treure NaN
+        dad.replace([np.inf, -np.inf], np.nan, inplace=True)
+        X = dad.bfill().ffill()
+        X = X.dropna()
+        
+        logger.info(f"🔎 [DEBUG] After final dropna:")
+        logger.info(f"   - Shape: {X.shape}")
+        logger.info(f"   - Files eliminades per NaN: {len(dad) - len(X)}")
+        
+        # PAS 5 - Desfer el dataset i guardar matrius X i y
+        nomy = y
+        y = pd.to_numeric(X[nomy], errors='raise')
+        del X[nomy]
 
-        url = (
-            f"https://archive-api.open-meteo.com/v1/archive"
-            f"?latitude={lat}&longitude={lon}"
-            f"&start_date={start_date}&end_date={end_date}"
-            f"&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,apparent_temperature,"
-            f"precipitation,rain,weathercode,pressure_msl,surface_pressure,cloudcover,"
-            f"cloudcover_low,cloudcover_mid,cloudcover_high,et0_fao_evapotranspiration,"
-            f"vapor_pressure_deficit,windspeed_10m,windspeed_100m,winddirection_10m,"
-            f"winddirection_100m,windgusts_10m,shortwave_radiation,direct_radiation,"
-            f"diffuse_radiation,direct_normal_irradiance,terrestrial_radiation"
-        )
+        # PAS 6 - Escalat
+        X, scaler = self.scalate_data(X, escalat)
 
-        try:
-            response = requests.get(url).json()
-            hourly = response.get("hourly", {})
-            timestamps = pd.to_datetime(hourly["time"])
-            meteo_data = pd.DataFrame(hourly)
-            meteo_data["timestamp"] = timestamps
-            meteo_data.drop(columns=["time"], inplace=True)
-        except Exception as e:
-            logger.error(f"❌ No s'han pogut descarregar les dades meteo històriques: {e}")
-            meteo_data = None
+        # PAS 7 - Seleccionar atributs
+        [model_select, X_new, y_new] = self.get_attribs(X, y, feature_selection)
 
-    # PREP PAS 0 - preparar els df de meteo-data i dades extra
-    merged_data = self.prepare_dataframes(data, meteo_data, extra_sensors_df)
-    # JA NO CAL bfill aquí perquè prepare_dataframes ja interpola
-    
-    logger.info(f"🔎 [DEBUG] After prepare_dataframes:")
-    logger.info(f"   - Merged Data Shape: {merged_data.shape}")
-    logger.info(f"   - NaNs totals: {merged_data.isna().sum().sum()}")
+        # PAS 8 - Crear el model
+        logger.info(f"🔎 [DEBUG] Final Model Inputs:")
+        logger.info(f"   - X_new Shape: {X_new.shape}")
+        logger.info(f"   - y_new Shape: {y_new.shape}")
 
-    if merged_data.empty:
-        logger.error(f"\n ************* \n ❌ No hi ha dades per a realitzar el Forecast \n *************")
-        return
+        [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
 
-    # PAS 1 - Fer el Windowing
-    dad = self.do_windowing(merged_data, look_back)
-    logger.info(f"🔎 [DEBUG] After Windowing:")
-    logger.info(f"   - Shape: {dad.shape}")
-    logger.info(f"   - NaNs totals: {dad.isna().sum().sum()}")
+        # PAS 9 - Guardar el model
+        if algorithm is None:
+            self.db['max_time'] = max_time
+            self.db['algorithm'] = "AUTO"
+        else:
+            self.db['params'] = params
+            self.db['algorithm'] = algorithm
 
-    # ============================================================
-    # SOLUCIÓ 2: ELIMINA FILES AMB MASSA NaNs
-    # ============================================================
-    nan_threshold = 0.3  # Si més del 30% són NaNs, elimina la fila
-    before_rows = len(dad)
-    
-    # Calcula percentatge de NaNs per fila
-    nan_per_row = dad.isna().sum(axis=1) / len(dad.columns)
-    dad = dad[nan_per_row <= nan_threshold]
-    
-    after_rows = len(dad)
-    eliminated = before_rows - after_rows
-    
-    if eliminated > 0:
-        logger.warning(f"⚠️ Eliminades {eliminated} files amb >{nan_threshold*100}% NaNs")
-    else:
-        logger.info(f"✅ Cap fila eliminada (totes tenen <{nan_threshold*100}% NaNs)")
-    
-    # Després, omple els NaNs restants amb bfill/ffill
-    nans_before = dad.isna().sum().sum()
-    logger.info(f"   NaNs abans bfill: {nans_before}")
-    
-    dad = dad.bfill().ffill()
-    
-    nans_after = dad.isna().sum().sum()
-    logger.info(f"   NaNs després bfill: {nans_after}")
-    
-    if nans_after > 0:
-        logger.error(f"❌ ALERTA: Encara queden {nans_after} NaNs després de bfill/ffill!")
-        logger.error("   Columnes amb NaNs:")
-        for col in dad.columns:
-            nan_count = dad[col].isna().sum()
-            if nan_count > 0:
-                logger.error(f"      {col}: {nan_count}")
-    # ============================================================
+        if meteo_data is not None:
+            self.db['meteo_data'] = meteo_data
+            self.db['meteo_data_is_selected'] = True
+        else:
+            self.db['meteo_data'] = None
+            self.db['meteo_data_is_selected'] = False
 
-    # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
-    dad = self.timestamp_to_attrs(dad, extra_vars)
-    logger.info(f"🔎 [DEBUG] After Timestamp Attributes:")
-    logger.info(f"   - Shape: {dad.shape}")
+        self.db['model'] = model
+        self.db['scaler'] = scaler
+        self.db['scaler_name'] = escalat
+        self.db['model_select'] = model_select
+        self.db['colinearity_remove_level_to_drop'] = colinearity_remove_level_to_drop
+        self.db['extra_vars'] = extra_vars
+        self.db['look_back'] = look_back
+        self.db['score'] = score
+        self.db['objective'] = nomy
+        self.db['initial_data'] = data
+        self.db['sensors_id'] = sensors_id
+        self.db['extra_sensors'] = extra_sensors_df
+        self.db['lat'] = lat
+        self.db['lon'] = lon
 
-    # PAS 3 - Treure Col·linearitats
-    [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
-    colinearity_remove_level_to_drop = to_drop
-    logger.info(f"🔎 [DEBUG] After Colinearity Removal:")
-    logger.info(f"   - Dropped Columns: {to_drop}")
-    logger.info(f"   - Shape: {dad.shape}")
+        self.save_model(filename)
 
-    # PAS 4 - Treure NaN (els que quedin després de tot)
-    dad.replace([np.inf, -np.inf], np.nan, inplace=True)
-    X = dad.bfill().ffill()  # Un últim bfill/ffill per seguretat
-    X = X.dropna()
-    
-    logger.info(f"🔎 [DEBUG] After final dropna:")
-    logger.info(f"   - Shape: {X.shape}")
-    logger.info(f"   - Files eliminades per NaN: {len(dad) - len(X)}")
-    
-    # PAS 5 - Desfer el dataset i guardar matrius X i y
-    nomy = y
-    y = pd.to_numeric(X[nomy], errors='raise')
-    del X[nomy]
-
-    # PAS 6 - Escalat
-    X, scaler = self.scalate_data(X, escalat)
-
-    # PAS 7 - Seleccionar atributs
-    [model_select, X_new, y_new] = self.get_attribs(X, y, feature_selection)
-
-    # PAS 8 - Crear el model
-    logger.info(f"🔎 [DEBUG] Final Model Inputs:")
-    logger.info(f"   - X_new Shape: {X_new.shape}")
-    logger.info(f"   - y_new Shape: {y_new.shape}")
-
-    [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
-
-    # PAS 9 - Guardar el model
-    if algorithm is None:
-        self.db['max_time'] = max_time
-        self.db['algorithm'] = "AUTO"
-    else:
-        self.db['params'] = params
-        self.db['algorithm'] = algorithm
-
-    if meteo_data is not None:
-        self.db['meteo_data'] = meteo_data
-        self.db['meteo_data_is_selected'] = True
-    else:
-        self.db['meteo_data'] = None
-        self.db['meteo_data_is_selected'] = False
-
-    self.db['model'] = model
-    self.db['scaler'] = scaler
-    self.db['scaler_name'] = escalat
-    self.db['model_select'] = model_select
-    self.db['colinearity_remove_level_to_drop'] = colinearity_remove_level_to_drop
-    self.db['extra_vars'] = extra_vars
-    self.db['look_back'] = look_back
-    self.db['score'] = score
-    self.db['objective'] = nomy
-    self.db['initial_data'] = data
-    self.db['sensors_id'] = sensors_id
-    self.db['extra_sensors'] = extra_sensors_df
-    self.db['lat'] = lat
-    self.db['lon'] = lon
-
-    self.save_model(filename)
-
-    if self.debug:
-        logger.debug('Model guardat! Score: ' + str(score))
+        if self.debug:
+            logger.debug('Model guardat! Score: ' + str(score))
 
     def forecast(self, data, y, model, future_steps=48):
         """
