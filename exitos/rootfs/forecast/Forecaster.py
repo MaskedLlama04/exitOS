@@ -649,7 +649,6 @@ class Forecaster:
                 nan_count = dad[col].isna().sum()
                 if nan_count > 0:
                     logger.error(f"      {col}: {nan_count}")
-        # ============================================================
 
         # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
         dad = self.timestamp_to_attrs(dad, extra_vars)
@@ -659,9 +658,6 @@ class Forecaster:
         # PAS 3 - Treure Col·linearitats
         [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
         colinearity_remove_level_to_drop = to_drop
-        logger.info(f"🔎 [DEBUG] After Colinearity Removal:")
-        logger.info(f"   - Dropped Columns: {to_drop}")
-        logger.info(f"   - Shape: {dad.shape}")
 
         # PAS 4 - Treure NaN
         dad.replace([np.inf, -np.inf], np.nan, inplace=True)
