@@ -507,6 +507,117 @@ class Forecaster:
         
         return merged_data
 
+    def _get_meteorological_forecast(self, lat, lon, days_ahead=4):
+        """
+        Obté previsions meteorològiques futures des de Open-Meteo API
+        
+        :param lat: Latitud de la ubicació
+        :param lon: Longitud de la ubicació
+        :param days_ahead: Dies de previsió a obtenir (màxim 7)
+        :return: DataFrame amb previsions meteorològiques o None si falla
+        """
+        try:
+            # Dates per a la previsió (des d'avui fins a days_ahead dies endavant)
+            start_date = pd.Timestamp.today().strftime("%Y-%m-%d")
+            end_date = (pd.Timestamp.today() + pd.Timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+            
+            logger.info(f"🌤️ Obtenint previsions meteorològiques de {start_date} a {end_date}")
+            
+            # URL de l'API de forecast (no archive!)
+            url = (
+                f"https://api.open-meteo.com/v1/forecast"
+                f"?latitude={lat}&longitude={lon}"
+                f"&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,apparent_temperature,"
+                f"precipitation,rain,weathercode,pressure_msl,surface_pressure,cloudcover,"
+                f"cloudcover_low,cloudcover_mid,cloudcover_high,et0_fao_evapotranspiration,"
+                f"vapor_pressure_deficit,windspeed_10m,windspeed_100m,winddirection_10m,"
+                f"winddirection_100m,windgusts_10m,shortwave_radiation,direct_radiation,"
+                f"diffuse_radiation,direct_normal_irradiance,terrestrial_radiation"
+                f"&forecast_days={days_ahead + 1}"
+            )
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            hourly = data.get("hourly", {})
+            if not hourly:
+                logger.warning("⚠️ API meteo no ha retornat dades horàries")
+                return None
+            
+            timestamps = pd.to_datetime(hourly["time"])
+            meteo_forecast = pd.DataFrame(hourly)
+            meteo_forecast["timestamp"] = timestamps
+            meteo_forecast.drop(columns=["time"], inplace=True)
+            
+            logger.info(f"✅ Obtingudes {len(meteo_forecast)} hores de previsions meteo")
+            return meteo_forecast
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"⚠️ Error obtenint previsions meteo: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ Error processant previsions meteo: {e}")
+            return None
+
+    def _interpolate_future_values(self, historical_data, variable_name, future_index):
+        """
+        Interpola valors futurs basant-se en patrons històrics
+        
+        :param historical_data: DataFrame amb dades històriques (amb índex temporal)
+        :param variable_name: Nom de la variable a interpolar
+        :param future_index: DatetimeIndex amb els timestamps futurs
+        :return: Series amb valors interpolats per als timestamps futurs
+        """
+        if variable_name not in historical_data.columns:
+            logger.warning(f"⚠️ Variable {variable_name} no trobada per interpolar")
+            return pd.Series([0] * len(future_index), index=future_index)
+        
+        # Estratègia: Usar mitjana per hora del dia dels últims 7-14 dies
+        try:
+            # Agafem les últimes 2 setmanes de dades
+            lookback_days = min(14, len(historical_data) // 24)
+            recent_data = historical_data[variable_name].tail(lookback_days * 24)
+            
+            if len(recent_data) == 0:
+                logger.warning(f"⚠️ No hi ha dades recents per {variable_name}, usant últim valor")
+                last_value = historical_data[variable_name].iloc[-1] if len(historical_data) > 0 else 0
+                return pd.Series([last_value] * len(future_index), index=future_index)
+            
+            # Crear un DataFrame amb hora del dia i dia de la setmana
+            recent_df = pd.DataFrame({
+                'value': recent_data.values,
+                'hour': recent_data.index.hour,
+                'dayofweek': recent_data.index.dayofweek
+            })
+            
+            # Calcular mitjana per hora del dia i dia de la setmana
+            hourly_patterns = recent_df.groupby(['dayofweek', 'hour'])['value'].mean()
+            
+            # Generar valors futurs basats en el patró
+            future_values = []
+            for timestamp in future_index:
+                hour = timestamp.hour
+                dayofweek = timestamp.dayofweek
+                
+                # Intentar obtenir el valor del patró
+                if (dayofweek, hour) in hourly_patterns.index:
+                    value = hourly_patterns.loc[(dayofweek, hour)]
+                else:
+                    # Fallback: mitjana per hora (ignorant dia de la setmana)
+                    hourly_avg = recent_df.groupby('hour')['value'].mean()
+                    value = hourly_avg.loc[hour] if hour in hourly_avg.index else recent_data.iloc[-1]
+                
+                future_values.append(value)
+            
+            logger.info(f"📊 Interpolats {len(future_values)} valors per {variable_name} basant-se en patrons històrics")
+            return pd.Series(future_values, index=future_index)
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error interpolant {variable_name}: {e}, usant últim valor")
+            last_value = historical_data[variable_name].iloc[-1] if len(historical_data) > 0 else 0
+            return pd.Series([last_value] * len(future_index), index=future_index)
+
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
                      max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
                      start_date=None, end_date=None):
@@ -719,22 +830,30 @@ class Forecaster:
 
     def forecast(self, data, y, model, future_steps=48):
         """
-        :return:
+        Genera prediccions futures amb interpolació intel·ligent i gestió adequada del windowing
+        
+        :param data: DataFrame amb dades històriques (amb timestamp com a índex o columna)
+        :param y: Nom de la variable objectiu
+        :param model: Model entrenat (normalment self.db['model'])
+        :param future_steps: Nombre d'hores a predir (per defecte 48)
+        :return: (predictions_df, real_values, sensor_id)
         """
-
-        # PAS 1 - Obtenir els valors del model
+        
+        logger.info(f"🔮 Iniciant forecast per {future_steps} hores futures")
+        
+        # PAS 1 - Obtenir configuració del model
         model_select = self.db.get('model_select', [])
         scaler = self.db['scaler']
         colinearity_remove_level_to_drop = self.db.get('colinearity_remove_level_to_drop', [])
         extra_vars = self.db.get('extra_vars', {})
         look_back = self.db.get('look_back', {-1: [25, 48]})
-
-        # PAS 2 - Aplicar el windowing
+        lat = self.db.get('lat')
+        lon = self.db.get('lon')
+        
+        # PAS 2 - Preparar dades històriques amb windowing
         df = self.do_windowing(data, look_back)
-
-        # ============================================================
+        
         # Neteja NaNs igual que a create_model
-        # ============================================================
         nan_threshold = 0.3
         before_rows = len(df)
         nan_per_row = df.isna().sum(axis=1) / len(df.columns)
@@ -746,90 +865,219 @@ class Forecaster:
         
         df = df.bfill().ffill()
         logger.info(f"🔎 [DEBUG] Forecast: NaNs després neteja: {df.isna().sum().sum()}")
-        # ============================================================
-
-        # PAS 3 - Afegir variables derivades de l'índex temporal {dia, hora, mes, ...}
+        
+        # PAS 3 - Afegir variables derivades de l'índex temporal
         df = self.timestamp_to_attrs(df, extra_vars)
-
-        logger.info(f"🔎 [DEBUG] Forecast: Data prepared for prediction (Shape: {df.shape})")
-
+        
+        logger.info(f"🔎 [DEBUG] Forecast: Dades històriques preparades (Shape: {df.shape})")
+        
         # PAS 4 - Eliminar colinearitats
         if colinearity_remove_level_to_drop:
             existing_cols = [col for col in colinearity_remove_level_to_drop if col in df.columns]
             df.drop(existing_cols, axis=1, inplace=True)
-
-        # PAS 5 - Eliminar la y
+        
+        # PAS 5 - Separar variable objectiu
         if y in df.columns:
-            real_values_column = df[y]
-            del df[y]
+            real_values_column = df[y].copy()
+            df_without_y = df.drop(columns=[y])
         else:
             raise ValueError(f"Columna {y} no trobada en el dataset")
-
-        # PAS 6 - Elinimar els NaN
-        if df.dropna().any().any():
-            df.bfill(inplace=True)
-
-        # PAS 7 - Escalar les dades
+        
+        # PAS 6 - Eliminar NaNs finals
+        df_without_y = df_without_y.bfill().ffill()
+        
+        # PAS 7 - Escalar les dades històriques
         if scaler:
-            # df.columns = [col.replace('value', 'state') for col in df.columns]
-            df = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
-
-        # PAS 8 - Seleccionar característiques a usar segons el selector del model
-        original_columns = df.columns
+            df_scaled = pd.DataFrame(
+                scaler.transform(df_without_y), 
+                index=df_without_y.index, 
+                columns=df_without_y.columns
+            )
+        else:
+            df_scaled = df_without_y.copy()
+        
+        # PAS 8 - Seleccionar característiques
+        original_columns = df_scaled.columns
         if model_select:
-            df = df.fillna(0)
-            df_transformed = pd.DataFrame(model_select.transform(df), index=df.index)
-            # df_transformed = df_transformed.fillna(0)
-
-        # PAS 9 - Preparar timestamps futurs
-        last_timestamp = data.index[-1]
-        tomorrow = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
-        end_time = tomorrow + pd.Timedelta(days=2)
-        # future_index = [last_timestamp + timedelta(hours=i + 1) for i in range(future_steps)]
-        future_index = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), end=end_time, freq='H',inclusive="left")
+            df_scaled = df_scaled.fillna(0)
+            df_transformed = pd.DataFrame(
+                model_select.transform(df_scaled), 
+                index=df_scaled.index
+            )
+        else:
+            df_transformed = df_scaled
+        
+        # PAS 9 - Predicció sobre dades històriques
+        historical_predictions = pd.DataFrame(
+            model.predict(df_transformed), 
+            index=df_transformed.index, 
+            columns=[y]
+        )
+        
+        logger.info(f"✅ Prediccions històriques generades: {len(historical_predictions)} punts")
+        
+        # ============================================================
+        # PAS 10 - PREPARAR PREDICCIONS FUTURES AMB INTERPOLACIÓ INTEL·LIGENT
+        # ============================================================
+        
+        # Determinar rang temporal futur
+        last_timestamp = data.index[-1] if isinstance(data.index, pd.DatetimeIndex) else pd.to_datetime(data['timestamp'].max())
+        future_index = pd.date_range(
+            start=last_timestamp + pd.Timedelta(hours=1), 
+            periods=future_steps, 
+            freq='h'
+        )
+        
+        logger.info(f"📅 Generant prediccions de {future_index[0]} a {future_index[-1]}")
+        
+        # PAS 11 - Obtenir previsions meteorològiques futures (si disponibles)
+        meteo_forecast = None
+        if lat is not None and lon is not None:
+            days_needed = int(np.ceil(future_steps / 24)) + 1
+            meteo_forecast = self._get_meteorological_forecast(lat, lon, days_ahead=days_needed)
+            
+            if meteo_forecast is not None:
+                # Normalitzar timestamps
+                meteo_forecast['timestamp'] = pd.to_datetime(meteo_forecast['timestamp']).dt.tz_localize(None)
+                meteo_forecast = meteo_forecast.set_index('timestamp')
+                logger.info(f"✅ Previsions meteo disponibles per {len(meteo_forecast)} hores")
+        
+        # PAS 12 - Crear DataFrame base per a prediccions futures
         future_df = pd.DataFrame(index=future_index)
         
-        # atributs (hora, dia, festius...)
+        # Afegir variables temporals (hora, dia, mes, festius)
         future_df = self.timestamp_to_attrs(future_df, extra_vars)
-
-        # NaN
-
-        missing_cols = [col for col in original_columns if col not in future_df.columns]
-
-        if missing_cols:
-            new_cols_df = pd.DataFrame({
-                col: [df[col].iloc[-1] if col in df.columns else 0 for _ in range(len(future_df))]
-                for col in missing_cols
-            }, index = future_df.index)
-
-            future_df = pd.concat([future_df, new_cols_df], axis=1)
-
-        future_df = future_df.fillna(0)
-        future_df = future_df[original_columns]
         
-        logger.info(f"🔍 [DEBUG] Forecast: Future DataFrame prepared (Shape: {future_df.shape})")
-
-        # scale
-        if scaler:
-            future_df = pd.DataFrame(scaler.transform(future_df), index=future_df.index, columns=original_columns)
-
-        # feature selection
-        if model_select:
-            future_df = model_select.transform(future_df)
-
-        # convert to numpy and predict
-        future_array = np.array([[float(x) for x in row] for row in future_df])
+        # PAS 13 - Preparar dades base per a interpolació
+        # Combinar dades històriques originals amb prediccions històriques
+        data_for_interpolation = data.copy()
+        if 'timestamp' in data_for_interpolation.columns:
+            data_for_interpolation = data_for_interpolation.set_index('timestamp')
+        
+        # Afegir prediccions històriques com a "valor predit"
+        data_for_interpolation['predicted_value'] = historical_predictions[y]
+        
+        # PAS 14 - Interpolar variables futures
+        logger.info("🔄 Interpolant variables futures...")
+        
+        # Identificar columnes que necessiten interpolació (excloses les temporals)
+        temporal_cols = ['Dia', 'Hora', 'Mes', 'Minut', 'festius']
+        cols_to_interpolate = [col for col in original_columns if col not in temporal_cols]
+        
+        for col in cols_to_interpolate:
+            # Comprovar si és una variable meteorològica
+            is_meteo_var = any(meteo_var in col for meteo_var in [
+                'temperature', 'humidity', 'dewpoint', 'apparent_temperature',
+                'precipitation', 'rain', 'weathercode', 'pressure', 'cloudcover',
+                'evapotranspiration', 'vapor_pressure', 'windspeed', 'winddirection',
+                'windgusts', 'radiation', 'irradiance'
+            ])
+            
+            # Si és variable meteo i tenim forecast, usar-lo
+            if is_meteo_var and meteo_forecast is not None and col in meteo_forecast.columns:
+                # Alinear amb future_index
+                future_df[col] = meteo_forecast.loc[future_index, col] if all(idx in meteo_forecast.index for idx in future_index) else self._interpolate_future_values(data_for_interpolation, col, future_index)
+                logger.info(f"   🌤️ {col}: Usant previsions API Open-Meteo")
+            
+            # Si és variable amb windowing (conté '_' i un número)
+            elif '_' in col and col.split('_')[-1].isdigit():
+                # Aquestes són variables de windowing (ex: 'value_25', 'temperature_2m_30')
+                # Les omplim inicialment amb interpolació, després s'actualitzaran iterativament
+                base_var = '_'.join(col.split('_')[:-1])
+                if base_var in data_for_interpolation.columns:
+                    future_df[col] = self._interpolate_future_values(data_for_interpolation, base_var, future_index)
+                else:
+                    future_df[col] = 0
+                logger.info(f"   🔄 {col}: Interpolació basada en patrons (s'actualitzarà iterativament)")
+            
+            # Variables normals (sensors, etc.)
+            else:
+                if col in data_for_interpolation.columns:
+                    future_df[col] = self._interpolate_future_values(data_for_interpolation, col, future_index)
+                    logger.info(f"   📊 {col}: Interpolació basada en patrons històrics")
+                else:
+                    future_df[col] = 0
+                    logger.warning(f"   ⚠️ {col}: No trobada, usant 0")
+        
+        # PAS 15 - PREDICCIÓ ITERATIVA MULTI-STEP
+        logger.info("🔮 Iniciant predicció iterativa multi-step...")
+        
+        future_predictions = []
+        
+        # Mantenir un buffer de les últimes prediccions per actualitzar windowing
+        # Necessitem almenys look_back_end valors
+        look_back_end = look_back.get(-1, [25, 48])[1] if -1 in look_back else 48
+        
+        # Buffer inicial: últimes hores de dades històriques + prediccions històriques
+        prediction_buffer = list(historical_predictions[y].tail(look_back_end).values)
+        
+        for i, timestamp in enumerate(future_index):
+            # Obtenir la fila actual
+            current_row = future_df.loc[timestamp:timestamp].copy()
+            
+            # Actualitzar variables de windowing basant-se en prediccions anteriors
+            for col in current_row.columns:
+                if '_' in col and col.split('_')[-1].isdigit():
+                    shift_amount = int(col.split('_')[-1])
+                    
+                    # Si el shift està dins del buffer, usar el valor del buffer
+                    if shift_amount <= len(prediction_buffer):
+                        current_row.loc[timestamp, col] = prediction_buffer[-shift_amount]
+            
+            # Assegurar que tenim totes les columnes necessàries
+            for col in original_columns:
+                if col not in current_row.columns:
+                    current_row[col] = 0
+            
+            # Reordenar columnes per coincidir amb l'entrenament
+            current_row = current_row[original_columns]
+            
+            # Escalar
+            if scaler:
+                current_row_scaled = pd.DataFrame(
+                    scaler.transform(current_row),
+                    index=current_row.index,
+                    columns=original_columns
+                )
+            else:
+                current_row_scaled = current_row
+            
+            # Feature selection
+            if model_select:
+                current_row_scaled = current_row_scaled.fillna(0)
+                current_row_transformed = model_select.transform(current_row_scaled)
+            else:
+                current_row_transformed = current_row_scaled.values
+            
+            # Predicció
+            prediction = model.predict(current_row_transformed)[0]
+            future_predictions.append(prediction)
+            
+            # Actualitzar buffer (afegir nova predicció i eliminar la més antiga si cal)
+            prediction_buffer.append(prediction)
+            if len(prediction_buffer) > look_back_end:
+                prediction_buffer.pop(0)
+            
+            # Log de progrés cada 24 hores
+            if (i + 1) % 24 == 0:
+                logger.info(f"   ⏳ Predites {i + 1}/{future_steps} hores...")
+        
+        # PAS 16 - Crear DataFrame amb prediccions futures
         forecast_output = pd.DataFrame(
-            model.predict(future_array),
+            future_predictions,
             index=future_index,
             columns=[y]
         )
+        
+        logger.info(f"✅ Prediccions futures generades: {len(forecast_output)} punts")
+        
+        # PAS 17 - Combinar prediccions històriques i futures
+        final_prediction = pd.concat([historical_predictions, forecast_output])
+        
+        logger.info(f"🎯 Forecast completat: {len(historical_predictions)} històriques + {len(forecast_output)} futures = {len(final_prediction)} total")
+        
+        return final_prediction, real_values_column, self.db['sensors_id']
 
-        out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
-
-        final_prediction = pd.concat([out, forecast_output])
-
-        return final_prediction, real_values_column,  self.db['sensors_id']
 
     def save_model(self, model_filename):
         """
