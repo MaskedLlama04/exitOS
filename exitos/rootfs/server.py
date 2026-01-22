@@ -401,6 +401,35 @@ def get_model_config(model_name):
     except Exception as e:
         return f"Error! : {str(e)}"
 
+@app.route('/get_model_metrics/<model_name>')
+def get_model_metrics(model_name):
+    """
+    Retorna les mètriques d'un model guardat
+    """
+    try:
+        model_path = os.path.join(forecast.models_filepath,'forecastings/',f"{model_name}.pkl")
+        
+        if not os.path.exists(model_path):
+            return json.dumps({"status": "error", "message": "Model not found"})
+        
+        with open(model_path, 'rb') as f:
+            model_db = joblib.load(f)
+        
+        metrics = model_db.get('metrics', {})
+        train_val_test = model_db.get('train_val_test_split', {})
+        
+        response = {
+            "status": "ok",
+            "metrics": metrics,
+            "train_val_test_split": train_val_test
+        }
+        
+        return json.dumps(response)
+    
+    except Exception as e:
+        logger.error(f"❌ Error getting metrics for model {model_name}: {e}")
+        return json.dumps({"status": "error", "message": str(e)})
+
 def train_model():
     selected_model = request.forms.get("model")
     extra_sensors_id = request.forms.get("sensors_id") if request.forms.get("sensors_id") else None
@@ -426,6 +455,22 @@ def train_model():
     sensors_id = config.get("sensorsId")
     scaled = config.get("scaled")
     model_name = config.get("modelName")
+    
+    # Obtenir configuració de windowing
+    windowing_option = config.get("windowingOption", "default")
+    look_back = None
+    
+    if windowing_option == "24-48":
+        look_back = {-1: [24, 48]}
+    elif windowing_option == "48-72":
+        look_back = {-1: [48, 72]}
+    elif windowing_option == "1-24":
+        look_back = {-1: [1, 24]}
+    elif windowing_option == "custom":
+        window_start = config.get("windowStart", 25)
+        window_end = config.get("windowEnd", 48)
+        look_back = {-1: [window_start, window_end]}
+    # Si és "default" o None, es farà servir el valor per defecte {-1: [25, 48]}
 
     config.pop("sensorsId")
     config.pop("scaled")
@@ -434,6 +479,9 @@ def train_model():
     config.pop("models")
     config.pop("action")
     if 'sensors_id' in config: config.pop('sensors_id')
+    if 'windowingOption' in config: config.pop('windowingOption')
+    if 'windowStart' in config: config.pop('windowStart')
+    if 'windowEnd' in config: config.pop('windowEnd')
 
     if "meteoData" in config:
         meteo_data = True
@@ -462,7 +510,7 @@ def train_model():
 
     sensors_df = database.get_data_from_sensor(sensors_id)
 
-    logger.info(f"Selected model: {selected_model}, Config: {config}")
+    logger.info(f"Selected model: {selected_model}, Config: {config}, Windowing: {look_back}")
 
     lat = optimalScheduler.latitude
     lon = optimalScheduler.longitude
@@ -477,7 +525,8 @@ def train_model():
                               meteo_data= meteo_data if meteo_data is True else None,
                               extra_sensors_df=extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon)
+                              lon=lon,
+                              look_back=look_back)
     else:
         forecast.create_model(data=sensors_df,
                               sensors_id=sensors_id,
@@ -489,7 +538,8 @@ def train_model():
                               meteo_data=meteo_data if meteo_data is True else None,
                               extra_sensors_df= extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon)
+                              lon=lon,
+                              look_back=look_back)
 
     return model_name
 
