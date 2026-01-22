@@ -423,14 +423,6 @@ def train_model():
                 except ValueError:
                     config[key] = value
 
-    start_date = config.get("startDate")
-    if start_date == "": start_date = None
-    end_date = config.get("endDate")
-    if end_date == "": end_date = None
-
-    if "startDate" in config: config.pop("startDate")
-    if "endDate" in config: config.pop("endDate")
-
     sensors_id = config.get("sensorsId")
     scaled = config.get("scaled")
     model_name = config.get("modelName")
@@ -470,7 +462,7 @@ def train_model():
 
     sensors_df = database.get_data_from_sensor(sensors_id)
 
-    logger.info(f"Selected model: {selected_model}, Config: {config}, Range: {start_date} - {end_date}")
+    logger.info(f"Selected model: {selected_model}, Config: {config}")
 
     lat = optimalScheduler.latitude
     lon = optimalScheduler.longitude
@@ -485,9 +477,7 @@ def train_model():
                               meteo_data= meteo_data if meteo_data is True else None,
                               extra_sensors_df=extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon,
-                              start_date=start_date,
-                              end_date=end_date)
+                              lon=lon)
     else:
         forecast.create_model(data=sensors_df,
                               sensors_id=sensors_id,
@@ -499,9 +489,7 @@ def train_model():
                               meteo_data=meteo_data if meteo_data is True else None,
                               extra_sensors_df= extra_sensors_df if extra_sensors_id is not None else None,
                               lat=lat,
-                              lon=lon,
-                              start_date=start_date,
-                              end_date=end_date)
+                              lon=lon)
 
     return model_name
 
@@ -578,6 +566,8 @@ def get_forecast_data(model_name):
             yesterday_predictions = yesterday["value"].tolist()
             yesterday_timestamps = yesterday["timestamp"].tolist()
 
+
+
         real_values = []
         real_values_timestamps = []
         for i in range(len(forecasts['real_value'])):
@@ -585,41 +575,41 @@ def get_forecast_data(model_name):
                 real_values.append(forecasts['real_value'][i])
                 real_values_timestamps.append(forecasts['timestamp'].tolist()[i])
 
+
+        #
+        # #separem dades reals de prediccions futures
+        # overlapping_timestamps = []
+        # overlapping_predictions = []
+        # real_vals = []
+        #
+        # future_timestamps = []
+        # future_predictions = []
+        #
+        # today = datetime.today()
+        # first_day = today - timedelta(days=7)
+        #
+        # for i in range(len(timestamps)):
+        #     if not math.isnan(real_values[i]):
+        #         overlapping_timestamps.append(timestamps[i])
+        #         overlapping_predictions.append(predictions[i])
+        #         real_vals.append(real_values[i])
+        #     else:
+        #         future_timestamps.append(timestamps[i])
+        #         future_predictions.append(predictions[i])
+        #
+        # #Calculem timestamps pel Plotly
+        # last_timestamp = None
+        # if future_timestamps:
+        #     last_timestamp = datetime.strptime(future_timestamps[-1], "%Y-%m-%d %H:%M")
+        # elif overlapping_timestamps:
+        #     last_timestamp = datetime.strptime(overlapping_timestamps[-1], "%Y-%m-%d %H:%M")
+        #
+        # if last_timestamp:
+        #     start_timestamp = last_timestamp - timedelta(days=7)
+        # else:
+
         start_timestamp = (datetime.today() - timedelta(days=4)).replace(hour=0, minute=0).strftime('%Y-%m-%d %H:%M')
         last_timestamp = (datetime.today() + timedelta(days=4)).replace(hour=0, minute=0).strftime('%Y-%m-%d %H:%M')
-
-        # OBTENIR MÈTRIQUES DEL MODEL
-        metrics = {}
-        try:
-            # Carregar el model per obtenir les mètriques
-            import joblib
-            model_path = f"./share/exitos/forecastings/{model_name}.pkl"
-            if os.path.exists(model_path):
-                model_data = joblib.load(model_path)
-                metrics = model_data.get('metrics', {})
-                
-                # Formatar les mètriques
-                if metrics:
-                    # Assegurar que totes les mètriques són serialitzables
-                    formatted_metrics = {}
-                    for key, value in metrics.items():
-                        if value is not None:
-                            if isinstance(value, (int, float)):
-                                # Arrodonir valors numèrics
-                                if key == 'MAPE':
-                                    formatted_metrics[key] = round(value, 2)
-                                elif key == 'R2':
-                                    formatted_metrics[key] = round(value, 4)
-                                else:
-                                    formatted_metrics[key] = round(value, 3)
-                            else:
-                                formatted_metrics[key] = value
-                    metrics = formatted_metrics
-            else:
-                logger.warning(f"Model file not found at {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading metrics for model {model_name}: {e}")
-            metrics = {}
 
         return json.dumps({
             "status": "ok",
@@ -631,8 +621,8 @@ def get_forecast_data(model_name):
             "yesterday_timestamps": yesterday_timestamps,
             "start_timestamp": start_timestamp,
             "last_timestamp": last_timestamp,
-            "metrics": metrics  # <-- AFEGIR MÈTRIQUES
         })
+
 
     except Exception as e:
         logger.error(f"❌ Error getting forecast for model {model_name}: {e}")
