@@ -436,6 +436,7 @@
                         const yesterdayTimestamps = data.yesterday_timestamps;
                         const startTimestamps = data.start_timestamp;
                         const endTimestamps = data.last_timestamp;
+                        const metrics = data.metrics || {}; //això obté les mètriques
 
 
                         document.getElementById("forecast-title").innerText = `Resultats del Forecast per al model: ${modelPath}`;
@@ -483,6 +484,104 @@
                         else {
                             Plotly.newPlot('forecast-chart', [traceReal, tracePrediction, traceYesterday], PlotlyTheme.mergeLayout(layout));
                         }
+
+                        // MOSTRAR MÈTRIQUES - NOVA SECCIÓ
+                        const metricsContainer = document.getElementById("forecast-metrics-container");
+                        const noMetricsMessage = document.getElementById("no-metrics-message");
+                        const tableBody = document.getElementById("metrics-table-body");
+
+                        if (metrics && Object.keys(metrics).length > 0) {
+                            metricsContainer.style.display = "block";
+                            noMetricsMessage.style.display = "none";
+                            tableBody.innerHTML = "";
+
+                            // Funció per formatar valors
+                            const formatValue = (value, key) => {
+                                if (value === null || value === undefined || value === "") return '-';
+
+                                const numValue = parseFloat(value);
+                                if (isNaN(numValue)) return value.toString();
+
+                                if (key === 'MAPE') return numValue.toFixed(2) + '%';
+                                if (key === 'R2') return numValue.toFixed(4);
+                                if (key === 'score') return numValue.toFixed(4);
+                                return numValue.toFixed(3);
+                            };
+
+                            // Actualitzar targetes principals
+                            document.getElementById("metric-mae").textContent = formatValue(metrics.MAE, 'MAE');
+                            document.getElementById("metric-rmse").textContent = formatValue(metrics.RMSE, 'RMSE');
+                            document.getElementById("metric-r2").textContent = formatValue(metrics.R2, 'R2');
+                            document.getElementById("metric-mape").textContent = formatValue(metrics.MAPE, 'MAPE');
+
+                            // Diccionari de descripcions i interpretacions
+                            const metricInfo = {
+                                'MAE': {
+                                    desc: 'Error Absolut Mitjà',
+                                    interpret: 'Mitjana dels errors absoluts. Valors més baixos són millors.'
+                                },
+                                'MSE': {
+                                    desc: 'Error Quadràtic Mitjà',
+                                    interpret: 'Mitjana dels errors quadrats. Pesa més els errors grans.'
+                                },
+                                'RMSE': {
+                                    desc: 'Arrel de l\'Error Quadràtic Mitjà',
+                                    interpret: 'Error en les mateixes unitats que la variable objectiu.'
+                                },
+                                'R2': {
+                                    desc: 'Coeficient de Determinació',
+                                    interpret: 'Proporció de la variància explicada. Més a prop de 1 és millor.'
+                                },
+                                'MAPE': {
+                                    desc: 'Error Percentual Absolut Mitjà',
+                                    interpret: 'Error en percentatge. Menys de 10% és bo, menys de 5% excel·lent.'
+                                },
+                                'score': {
+                                    desc: 'Puntuació principal del model',
+                                    interpret: 'Mètrica principal usada per a l\'optimització del model.'
+                                }
+                            };
+
+                            // Omplir taula
+                            Object.entries(metrics).forEach(([key, value]) => {
+                                const formattedValue = formatValue(value, key);
+                                const info = metricInfo[key] || { desc: 'Mètrica del model', interpret: 'Sense interpretació disponible' };
+
+                                const row = document.createElement("tr");
+                                row.innerHTML = `
+                                    <td><strong>${key}</strong></td>
+                                    <td><span style="font-weight: bold; color: #007bff;">${formattedValue}</span></td>
+                                    <td>${info.desc}</td>
+                                    <td style="color: #6c757d; font-size: 0.9rem;">${info.interpret}</td>
+                                `;
+                                tableBody.appendChild(row);
+                            });
+
+                            // Afegir informació addicional sobre les mètriques
+                            const infoRow = document.createElement("tr");
+                            infoRow.style.backgroundColor = "#f1f8ff";
+                            infoRow.innerHTML = `
+                                <td colspan="4" style="padding: 15px; font-size: 0.9rem; color: #0056b3;">
+                                    <i class="fa-solid fa-info-circle" style="margin-right: 5px;"></i>
+                                    <strong>Nota:</strong> Aquestes mètriques s'han calculat sobre el conjunt d'entrenament del model.
+                                    Mètriques com R² properes a 1 i MAPE baixos indiquen un bon ajust del model.
+                                </td>
+                            `;
+                            tableBody.appendChild(infoRow);
+
+                        } else {
+                            // No hi ha mètriques disponibles
+                            metricsContainer.style.display = "block";
+                            tableBody.innerHTML = "";
+                            noMetricsMessage.style.display = "block";
+
+                            // Netejar targetes principals
+                            document.getElementById("metric-mae").textContent = '-';
+                            document.getElementById("metric-rmse").textContent = '-';
+                            document.getElementById("metric-r2").textContent = '-';
+                            document.getElementById("metric-mape").textContent = '-';
+                        }
+
                         hideLoadingSpinner();
                     } else {
                         document.getElementById("forecast-title").style.display = "none";
@@ -511,7 +610,7 @@
 
                 // Desmarcar el checkbox de meteo_data
                 document.getElementById("meteoData").checked = false;
-
+                document.getElementById("forecast-metrics-container").style.display = "none";
                 document.getElementById("forecast-title").style.display = "none";
                 document.getElementById("forecast-chart").innerHTML = '';
                 document.getElementById("delete-forecast").disabled = true;
