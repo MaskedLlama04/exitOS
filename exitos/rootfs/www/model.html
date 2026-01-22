@@ -550,16 +550,6 @@
 
         document.getElementById('models').addEventListener('change', updateModels);
 
-        if ("{{active_model}}" === "newModel") {
-            document.getElementById("models").value = "{{active_model}}";
-            updateModels("{{active_model}}");
-        }
-        else {
-            console.log("Updating model info...");
-            document.getElementById("models").value = "{{active_model}}" + ".pkl";
-            updateModels("{{active_model}}" + ".pkl");
-        }
-
         // WINDOWING OPTION HANDLER
         document.getElementById('windowingOption').addEventListener('change', function () {
             const customInputs = document.getElementById('customWindowingInputs');
@@ -572,11 +562,16 @@
 
         // FETCH AND DISPLAY METRICS
         function displayMetrics(modelPath) {
+            console.log("📊 Fetching metrics for model:", modelPath);
             fetch('get_model_metrics/' + modelPath)
                 .then(response => response.json())
                 .then(data => {
-                    if (data.status === "ok" && data.metrics) {
-                        const metricsSection = document.getElementById("metrics-section");
+                    console.log("📊 Metrics response:", data);
+                    const metricsSection = document.getElementById("metrics-section");
+
+                    // Comprovar si hi ha mètriques vàlides amb steps
+                    if (data.status === "ok" && data.metrics && data.metrics.steps && data.metrics.steps.length > 0) {
+                        console.log("✅ Displaying metrics with", data.metrics.steps.length, "steps");
                         metricsSection.style.display = "block";
 
                         // Mostrar mètriques principals
@@ -587,12 +582,21 @@
 
                         // Mostrar warnings
                         displayValidationWarnings(data.metrics);
+                    } else if (data.status === "ok") {
+                        // Model sense mètriques (antic)
+                        console.log("⚠️ Model without metrics (legacy model)");
+                        metricsSection.style.display = "block";
+                        const tableBody = document.getElementById("metrics-table-body");
+                        tableBody.innerHTML = "<tr><td colspan='3' style='text-align:center; padding: 15px; color: #666;'><em>Aquest model no té mètriques registrades (model antic).</em></td></tr>";
+                        document.getElementById("dataset-info-content").innerHTML = ""; // Changed from dataset-info to dataset-info-content
+                        document.getElementById("warnings-content").innerHTML = "";
                     } else {
-                        document.getElementById("metrics-section").style.display = "none";
+                        console.log("❌ Hiding metrics section - status:", data.status);
+                        metricsSection.style.display = "none";
                     }
                 })
                 .catch(error => {
-                    console.error("Error fetching metrics:", error);
+                    console.error("❌ Error fetching metrics:", error);
                     document.getElementById("metrics-section").style.display = "none";
                 });
         }
@@ -717,7 +721,7 @@
 
             if (!hasWarnings) {
                 html = `<div style="background-color: #d4edda; padding: 10px; border-left: 4px solid #28a745;">`;
-                html += `<strong>✅ Totes les validacions han passat correctament</strong>`;
+                html += `<strong>Totes les validacions han passat correctament</strong>`;
                 html += `</div>`;
             }
 
@@ -733,6 +737,17 @@
 
 
 
+
+        // INICIALITZACIÓ (Mogut al final per assegurar que tot està definit)
+        if ("{{active_model}}" === "newModel") {
+            document.getElementById("models").value = "{{active_model}}";
+            updateModels("{{active_model}}");
+        }
+        else {
+            console.log("Updating model info...");
+            document.getElementById("models").value = "{{active_model}}" + ".pkl";
+            updateModels("{{active_model}}" + ".pkl");
+        }
     </script>
 
 </body>
