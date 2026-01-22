@@ -1,5 +1,5 @@
 from datetime import timedelta
-
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import joblib
 import numpy as np
 import pandas as pd
@@ -548,6 +548,24 @@ class Forecaster:
         # PAS 8 - Crear el model
         [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
 
+        # Calcular mètriques addicionals
+        y_pred = model.predict(X_new)
+        mae = mean_absolute_error(y_new, y_pred)
+        mse = mean_squared_error(y_new, y_pred)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y_new, y_pred)
+        mape = np.mean(np.abs((y_new - y_pred) / y_new)) * 100 if np.any(y_new != 0) else 0
+
+        # Guardar mètriques
+        self.db['metrics'] = {
+            'MAE': float(mae),
+            'MSE': float(mse),
+            'RMSE': float(rmse),
+            'R2': float(r2),
+            'MAPE': float(mape),
+            'score': float(score) if score != 'none' else None
+}
+
         # PAS 9 - Guardar el model
         if algorithm is None:
             self.db['max_time'] = max_time
@@ -584,12 +602,12 @@ class Forecaster:
             logger.debug('Model guardat! Score: ' + str(score))
 
     def forecast(self, data, y, model, future_steps=48):
-        """
-        :return:
-        """
+    """
+    Executa el forecast i calcula mètriques de validació (FASE 1)
+    """
 
         # PAS 1 - Obtenir els valors del model
-        model_select = self.db.get('model_select', [])  # intenta obtenir model_select, si no existeix retorna []
+        model_select = self.db.get('model_select', [])
         scaler = self.db['scaler']
         colinearity_remove_level_to_drop = self.db.get('colinearity_remove_level_to_drop', [])
         extra_vars = self.db.get('extra_vars', {})
@@ -598,7 +616,7 @@ class Forecaster:
         # PAS 2 - Aplicar el windowing
         df = self.do_windowing(data, look_back)
 
-        # PAS 3 - Afegir variables derivades de l'índex temporal {dia, hora, mes, ...}
+        # PAS 3 - Afegir variables temporals
         df = self.timestamp_to_attrs(df, extra_vars)
 
         # PAS 4 - Eliminar colinearitats
@@ -606,41 +624,98 @@ class Forecaster:
             existing_cols = [col for col in colinearity_remove_level_to_drop if col in df.columns]
             df.drop(existing_cols, axis=1, inplace=True)
 
-        # PAS 5 - Eliminar la y
+        # PAS 5 - Separar y
         if y in df.columns:
             real_values_column = df[y]
             del df[y]
         else:
             raise ValueError(f"Columna {y} no trobada en el dataset")
 
-        # PAS 6 - Elinimar els NaN
+        # PAS 6 - Gestionar NaNs
         if df.dropna().any().any():
             df.bfill(inplace=True)
 
-        # PAS 7 - Escalar les dades
+        # PAS 7 - Escalat
         if scaler:
-            # df.columns = [col.replace('value', 'state') for col in df.columns]
             df = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
 
-        # PAS 8 - Seleccionar característiques a usar segons el selector del model
+        # PAS 8 - Feature selection
         original_columns = df.columns
         if model_select:
             df = df.fillna(0)
             df_transformed = pd.DataFrame(model_select.transform(df), index=df.index)
-            # df_transformed = df_transformed.fillna(0)
+        else:
+            df_transformed = df.copy()
 
-        # PAS 9 - Preparar timestamps futurs
+        # PREDICCIÓ SOBRE DADES HISTÒRIQUES 
+        
+        out = pd.DataFrame(
+            model.predict(df_transformed),
+            index=df_transformed.index,
+            columns=[y]
+        )
+
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+        import numpy as np
+
+        y_true = real_values_column.loc[out.index]
+        y_pred = out[y]
+
+        eps = 1e-6
+
+        model_metrics = {
+            "mae": mean_absolute_error(y_true, y_pred),
+            "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
+            "mape": np.mean(np.abs((y_true - y_pred) / (y_true + eps))) * 100,
+            "r2": r2_score(y_true, y_pred),
+            "n_samples": len(y_true)
+        }
+
+        # Baseline persistència t-24
+        y_baseline = y_true.shift(24)
+        valid_idx = ~y_baseline.isna()
+
+        baseline_mae = mean_absolute_error(
+            y_true[valid_idx],
+            y_baseline[valid_idx]
+        )
+
+        improvement_pct = 100 * (baseline_mae - model_metrics["mae"]) / baseline_mae
+
+        # Error per horitzó
+        horizon_errors = {}
+        for h in [1, 6, 24]:
+            horizon_errors[f"t+{h}"] = mean_absolute_error(
+                y_true.iloc[h:],
+                y_pred.iloc[:-h]
+            )
+
+        # Sanity checks
+        initial_jump = abs(y_true.iloc[-1] - y_pred.iloc[-1])
+
+        min_hist = y_true.min()
+        max_hist = y_true.max()
+
+        out_of_range_pct = (
+            ((y_pred < min_hist) | (y_pred > max_hist)).mean() * 100
+        )
+
+        # --------------------------------------------------
+        # PREDICCIÓ FUTURA (NO TOCAR)
+        # --------------------------------------------------
         last_timestamp = data.index[-1]
         tomorrow = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
         end_time = tomorrow + pd.Timedelta(days=2)
-        # future_index = [last_timestamp + timedelta(hours=i + 1) for i in range(future_steps)]
-        future_index = pd.date_range(start=last_timestamp + pd.Timedelta(hours=1), end=end_time, freq='H',inclusive="left")
+
+        future_index = pd.date_range(
+            start=last_timestamp + pd.Timedelta(hours=1),
+            end=end_time,
+            freq='H',
+            inclusive="left"
+        )
+
         future_df = pd.DataFrame(index=future_index)
-
-        # atributs (hora, dia, festius...)
         future_df = self.timestamp_to_attrs(future_df, extra_vars)
-
-        # NaN
 
         missing_cols = [col for col in original_columns if col not in future_df.columns]
 
@@ -648,33 +723,50 @@ class Forecaster:
             new_cols_df = pd.DataFrame({
                 col: [df[col].iloc[-1] if col in df.columns else 0 for _ in range(len(future_df))]
                 for col in missing_cols
-            }, index = future_df.index)
+            }, index=future_df.index)
 
             future_df = pd.concat([future_df, new_cols_df], axis=1)
 
         future_df = future_df.fillna(0)
         future_df = future_df[original_columns]
 
-        # scale
         if scaler:
-            future_df = pd.DataFrame(scaler.transform(future_df), index=future_df.index, columns=original_columns)
+            future_df = pd.DataFrame(
+                scaler.transform(future_df),
+                index=future_df.index,
+                columns=original_columns
+            )
 
-        # feature selection
         if model_select:
             future_df = model_select.transform(future_df)
 
-        # convert to numpy and predict
         future_array = np.array([[float(x) for x in row] for row in future_df])
+
         forecast_output = pd.DataFrame(
             model.predict(future_array),
             index=future_index,
             columns=[y]
         )
-        out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
 
         final_prediction = pd.concat([out, forecast_output])
 
-        return final_prediction, real_values_column,  self.db['sensors_id']
+        # Return ampliat amb mètriques
+        return (
+            final_prediction,
+            real_values_column,
+            self.db['sensors_id'],
+            {
+                "model": model_metrics,
+                "baseline_mae": baseline_mae,
+                "improvement_pct": improvement_pct,
+                "horizon_errors": horizon_errors,
+                "sanity_checks": {
+                    "initial_jump": initial_jump,
+                    "out_of_range_pct": out_of_range_pct
+                }
+            }
+        )
+
 
     def save_model(self, model_filename):
         """
