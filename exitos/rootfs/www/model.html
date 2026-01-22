@@ -119,6 +119,24 @@
                         </select>
                     </label>
 
+                    <label for="windowingOption">Windowing:
+                        <select class="form-select" name="windowingOption" id="windowingOption">
+                            <option value="default">Per defecte [25-48]</option>
+                            <option value="24-48">[24-48] - Dia anterior</option>
+                            <option value="48-72">[48-72] - 2 dies anteriors</option>
+                            <option value="1-24">[1-24] - Últimes 24h</option>
+                            <option value="custom">Personalitzat</option>
+                        </select>
+                    </label>
+
+                    <div id="customWindowingInputs" style="display: none;">
+                        <label for="windowStart">Inici finestra:
+                            <input type="number" name="windowStart" id="windowStart" value="25" min="1">
+                        </label>
+                        <label for="windowEnd">Fi finestra:
+                            <input type="number" name="windowEnd" id="windowEnd" value="48" min="2">
+                        </label>
+                    </div>
 
                     <div class="model-checkbox-div">
                         <input type="checkbox" class="meteoData-checkbox" id="meteoData" name="meteoData" value="false">
@@ -144,6 +162,39 @@
                 <div id="forecast-chart-container" style="margin-top: 20px;">
                     <h3 id="forecast-title" style="display:none;"></h3>
                     <div id="forecast-chart"></div>
+
+                    <!-- Secció de Mètriques -->
+                    <div id="metrics-section" style="display:none; margin-top: 30px;">
+                        <h3>📊 Mètriques del Model</h3>
+
+                        <!-- Mètriques principals -->
+                        <div id="main-metrics" style="margin-bottom: 20px;">
+                            <h4>Rendiment del Model</h4>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background-color: #f0f0f0;">
+                                        <th style="padding: 8px; border: 1px solid #ddd;">Mètrica</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd;">Valor</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd;">Descripció</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="metrics-table-body">
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Informació del dataset -->
+                        <div id="dataset-info" style="margin-bottom: 20px;">
+                            <h4>Informació del Dataset</h4>
+                            <div id="dataset-info-content"></div>
+                        </div>
+
+                        <!-- Warnings i errors -->
+                        <div id="validation-warnings" style="margin-bottom: 20px;">
+                            <h4>Validacions del Procés</h4>
+                            <div id="warnings-content"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -508,6 +559,179 @@
             document.getElementById("models").value = "{{active_model}}" + ".pkl";
             updateModels("{{active_model}}" + ".pkl");
         }
+
+        // WINDOWING OPTION HANDLER
+        document.getElementById('windowingOption').addEventListener('change', function () {
+            const customInputs = document.getElementById('customWindowingInputs');
+            if (this.value === 'custom') {
+                customInputs.style.display = 'block';
+            } else {
+                customInputs.style.display = 'none';
+            }
+        });
+
+        // FETCH AND DISPLAY METRICS
+        function displayMetrics(modelPath) {
+            fetch('get_model_metrics/' + modelPath)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === "ok" && data.metrics) {
+                        const metricsSection = document.getElementById("metrics-section");
+                        metricsSection.style.display = "block";
+
+                        // Mostrar mètriques principals
+                        displayMainMetrics(data.metrics);
+
+                        // Mostrar info del dataset
+                        displayDatasetInfo(data.metrics, data.train_val_test_split);
+
+                        // Mostrar warnings
+                        displayValidationWarnings(data.metrics);
+                    } else {
+                        document.getElementById("metrics-section").style.display = "none";
+                    }
+                })
+                .catch(error => {
+                    console.error("Error fetching metrics:", error);
+                    document.getElementById("metrics-section").style.display = "none";
+                });
+        }
+
+        function displayMainMetrics(metrics) {
+            const tableBody = document.getElementById("metrics-table-body");
+            tableBody.innerHTML = "";
+
+            // Buscar mètriques del model en els steps
+            let modelMetrics = null;
+            if (metrics.steps) {
+                for (let step of metrics.steps) {
+                    if (step.step_name === "Entrenament del Model") {
+                        modelMetrics = step.metrics;
+                        break;
+                    }
+                }
+            }
+
+            if (modelMetrics) {
+                const metricsToShow = [
+                    { key: 'mae', label: 'MAE', description: 'Mean Absolute Error - Error absolut mitjà' },
+                    { key: 'rmse', label: 'RMSE', description: 'Root Mean Squared Error - Arrel de l\'error quadràtic mitjà' },
+                    { key: 'r2_score', label: 'R²', description: 'Coeficient de determinació (0-1, més alt millor)' },
+                    { key: 'mape', label: 'MAPE (%)', description: 'Mean Absolute Percentage Error - Error percentual absolut mitjà' }
+                ];
+
+                metricsToShow.forEach(metric => {
+                    if (modelMetrics[metric.key] !== undefined) {
+                        const row = document.createElement("tr");
+                        row.innerHTML = `
+                            <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${metric.label}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">${modelMetrics[metric.key]}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">${metric.description}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    }
+                });
+
+                // Afegir temps d'entrenament
+                if (modelMetrics.training_time_seconds) {
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Temps d'entrenament</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${modelMetrics.training_time_seconds}s</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">Temps total d'entrenament del model</td>
+                    `;
+                    tableBody.appendChild(row);
+                }
+            }
+
+            // Buscar comparació amb baselines
+            let baselineMetrics = null;
+            if (metrics.steps) {
+                for (let step of metrics.steps) {
+                    if (step.step_name === "Comparació amb Baselines") {
+                        baselineMetrics = step.metrics;
+                        break;
+                    }
+                }
+            }
+
+            if (baselineMetrics) {
+                const row = document.createElement("tr");
+                row.style.backgroundColor = "#e8f5e9";
+                row.innerHTML = `
+                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;" colspan="3">
+                        <strong>Comparació amb Baselines:</strong><br>
+                        ✅ Millora vs Persistència: ${baselineMetrics.improvement_vs_persistence}%<br>
+                        ✅ Millora vs Mitjana Mòbil: ${baselineMetrics.improvement_vs_ma}%
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            }
+        }
+
+        function displayDatasetInfo(metrics, trainValTest) {
+            const content = document.getElementById("dataset-info-content");
+            let html = "<ul style='list-style: none; padding-left: 0;'>";
+
+            if (trainValTest) {
+                html += `<li><strong>📊 Divisió de dades:</strong></li>`;
+                html += `<li style="margin-left: 20px;">• Train: ${trainValTest.train_size} mostres (60%)</li>`;
+                html += `<li style="margin-left: 20px;">• Validation: ${trainValTest.val_size} mostres (20%)</li>`;
+                html += `<li style="margin-left: 20px;">• Test: ${trainValTest.test_size} mostres (20%)</li>`;
+            }
+
+            // Buscar info de preparació de dataframes
+            if (metrics.steps) {
+                for (let step of metrics.steps) {
+                    if (step.step_name === "Preparació DataFrames") {
+                        const m = step.metrics;
+                        html += `<li style="margin-top: 10px;"><strong>📋 Dataset fusionat:</strong></li>`;
+                        html += `<li style="margin-left: 20px;">• Files: ${m.merged_rows}</li>`;
+                        html += `<li style="margin-left: 20px;">• Columnes: ${m.merged_columns}</li>`;
+                        html += `<li style="margin-left: 20px;">• Cobertura temporal: ${m.temporal_coverage_days} dies</li>`;
+                        break;
+                    }
+                }
+            }
+
+            html += "</ul>";
+            content.innerHTML = html;
+        }
+
+        function displayValidationWarnings(metrics) {
+            const content = document.getElementById("warnings-content");
+            let html = "";
+            let hasWarnings = false;
+
+            if (metrics.steps) {
+                metrics.steps.forEach(step => {
+                    if (step.status === "WARNING") {
+                        hasWarnings = true;
+                        html += `<div style="background-color: #fff3cd; padding: 10px; margin-bottom: 10px; border-left: 4px solid #ffc107;">`;
+                        html += `<strong>⚠️ ${step.step_name}</strong><br>`;
+                        html += `<small>Revisar aquest pas - Pot afectar el rendiment del model</small>`;
+                        html += `</div>`;
+                    }
+                });
+            }
+
+            if (!hasWarnings) {
+                html = `<div style="background-color: #d4edda; padding: 10px; border-left: 4px solid #28a745;">`;
+                html += `<strong>✅ Totes les validacions han passat correctament</strong>`;
+                html += `</div>`;
+            }
+
+            content.innerHTML = html;
+        }
+
+        // Modificar updateModelSelection per cridar displayMetrics
+        const originalUpdateModelSelection = updateModelSelection;
+        updateModelSelection = function (modelPath) {
+            originalUpdateModelSelection(modelPath);
+            displayMetrics(modelPath);
+        };
+
+
 
     </script>
 
