@@ -1,4 +1,5 @@
 from datetime import timedelta
+import time
 
 import joblib
 import numpy as np
@@ -8,6 +9,8 @@ import logging
 import os
 import glob
 import requests
+
+from forecast.ForecastMetrics import ForecastMetrics
 
 logger = logging.getLogger("exitOS")
 
@@ -21,6 +24,7 @@ class Forecaster:
         self.debug = debug
         self.search_space_config_file = 'resources/search_space.conf'
         self.db = dict()
+        self.metrics = ForecastMetrics(debug=debug)
 
         if "HASSIO_TOKEN" in os.environ:
             self.models_filepath = "share/exitos/"
@@ -458,7 +462,8 @@ class Forecaster:
         return merged_data
 
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
-                         max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None):
+                         max_time=None, filename='newModel', meteo_data: pd.DataFrame = None, extra_sensors_df=None,
+                         look_back=None):
         """
         Funció per crear, guardar i configurar el model de forecasting.
 
@@ -474,13 +479,18 @@ class Forecaster:
         :param params:
         :param algorithm:
         :param meteo_data: Dades meteorològiques de la data
+        :param look_back: Configuració del windowing (per defecte {-1: [25, 48]})
 
         """
+        
+        # Reiniciar mètriques per a aquest model
+        self.metrics = ForecastMetrics(debug=self.debug)
 
         extra_vars = {'variables': ['Dia', 'Hora', 'Mes'], 'festius': ['ES', 'CT']}
         feature_selection = 'Tree'
         colinearity_remove_level = 0.9
-        look_back = {-1: [25, 48]}
+        if look_back is None:
+            look_back = {-1: [25, 48]}
 
         # Descarregar dades meteo si no es proporcionen
         if meteo_data is not None and not data.empty:
@@ -515,40 +525,88 @@ class Forecaster:
         #PREP PAS 0 - preparar els df de meteo-data i dades extra
         merged_data = self.prepare_dataframes(data, meteo_data, extra_sensors_df)
         merged_data.bfill(inplace=True)
+        
+        # VALIDACIÓ PAS 0
+        self.metrics.validate_dataframe_preparation(data, meteo_data, extra_sensors_df, merged_data)
 
         if merged_data.empty:
             logger.error(f"\n ************* \n ❌ No hi ha dades per a realitzar el Forecast \n *************")
             return
 
         # PAS 1 - Fer el Windowing
+        dad_before_windowing = merged_data.copy()
         dad = self.do_windowing(merged_data, look_back)
+        
+        # VALIDACIÓ PAS 1
+        self.metrics.validate_windowing(dad_before_windowing, dad, look_back)
 
         # PAS 2 - Crear variable dia_setmana, hora, més i meteoData
         dad = self.timestamp_to_attrs(dad, extra_vars)
+        
+        # VALIDACIÓ PAS 2
+        self.metrics.validate_temporal_features(dad, extra_vars)
 
         # PAS 3 - Treure Col·linearitats
+        dad_before_colinearity = dad.copy()
         [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
         colinearity_remove_level_to_drop = to_drop
+        
+        # VALIDACIÓ PAS 3
+        self.metrics.validate_colinearity_removal(dad_before_colinearity, dad, to_drop, y, colinearity_remove_level)
 
         # PAS 4 - Treure NaN
         dad.replace([np.inf, -np.inf], np.nan, inplace=True)
+        dad_before_nan = dad.copy()
         X = dad.bfill()
         X = X.dropna()
+        
+        # VALIDACIÓ PAS 4
+        self.metrics.validate_nan_handling(dad_before_nan, X)
+        
         # PAS 5 - Desfer el dataset i guardar matrius X i y
         nomy = y
         y = pd.to_numeric(X[nomy], errors='raise')
         del X[nomy]
+        
+        # Divisió Train/Validation/Test (60/20/20)
+        train_size = int(0.6 * len(X))
+        val_size = int(0.2 * len(X))
+        
+        X_train = X[:train_size]
+        X_val = X[train_size:train_size+val_size]
+        X_test = X[train_size+val_size:]
+        
+        y_train = y[:train_size]
+        y_val = y[train_size:train_size+val_size]
+        y_test = y[train_size+val_size:]
 
         # PAS 6 - Escalat
+        X_before_scaling = X.copy()
         X, scaler = self.scalate_data(X, escalat)
+        
+        # VALIDACIÓ PAS 6
+        self.metrics.validate_scaling(X_before_scaling, X, escalat)
 
         # PAS 7 - Seleccionar atributs
         [model_select, X_new, y_new] = self.get_attribs(X, y, feature_selection)
+        
+        # VALIDACIÓ PAS 7
+        X_before_selection = X if isinstance(X, np.ndarray) else X.values
+        self.metrics.validate_feature_selection(X_before_selection, X_new, feature_selection)
 
         # PAS 8 - Crear el model
+        training_start = time.time()
         [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
+        training_time = time.time() - training_start
+        
+        # VALIDACIÓ PAS 8 - Entrenar amb totes les dades i validar
+        y_pred = model.predict(X_new)
+        self.metrics.validate_model_training(X_new, y_new.values, y_pred, algorithm, score, training_time)
+        
+        # Comparar amb baselines
+        self.metrics.compare_with_baseline(y_new.values, y_pred)
 
-        # PAS 9 - Guardar el model
+        # PAS 9 - Guardar el model i les mètriques
         if algorithm is None:
             self.db['max_time'] = max_time
             self.db['algorithm'] = "AUTO"
@@ -577,6 +635,14 @@ class Forecaster:
         self.db['extra_sensors'] = extra_sensors_df
         self.db['lat'] = lat
         self.db['lon'] = lon
+        
+        # Guardar mètriques
+        self.db['metrics'] = self.metrics.get_summary()
+        self.db['train_val_test_split'] = {
+            'train_size': len(X_train),
+            'val_size': len(X_val),
+            'test_size': len(X_test)
+        }
 
         self.save_model(filename)
 
