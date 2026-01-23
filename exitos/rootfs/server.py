@@ -653,39 +653,6 @@ def get_forecast_data(model_name):
                 real_values.append(forecasts['real_value'][i])
                 real_values_timestamps.append(forecasts['timestamp'].tolist()[i])
 
-
-        #
-        # #separem dades reals de prediccions futures
-        # overlapping_timestamps = []
-        # overlapping_predictions = []
-        # real_vals = []
-        #
-        # future_timestamps = []
-        # future_predictions = []
-        #
-        # today = datetime.today()
-        # first_day = today - timedelta(days=7)
-        #
-        # for i in range(len(timestamps)):
-        #     if not math.isnan(real_values[i]):
-        #         overlapping_timestamps.append(timestamps[i])
-        #         overlapping_predictions.append(predictions[i])
-        #         real_vals.append(real_values[i])
-        #     else:
-        #         future_timestamps.append(timestamps[i])
-        #         future_predictions.append(predictions[i])
-        #
-        # #Calculem timestamps pel Plotly
-        # last_timestamp = None
-        # if future_timestamps:
-        #     last_timestamp = datetime.strptime(future_timestamps[-1], "%Y-%m-%d %H:%M")
-        # elif overlapping_timestamps:
-        #     last_timestamp = datetime.strptime(overlapping_timestamps[-1], "%Y-%m-%d %H:%M")
-        #
-        # if last_timestamp:
-        #     start_timestamp = last_timestamp - timedelta(days=7)
-        # else:
-
         start_timestamp = (datetime.today() - timedelta(days=4)).replace(hour=0, minute=0).strftime('%Y-%m-%d %H:%M')
         last_timestamp = (datetime.today() + timedelta(days=4)).replace(hour=0, minute=0).strftime('%Y-%m-%d %H:%M')
 
