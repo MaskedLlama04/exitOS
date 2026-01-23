@@ -28,10 +28,34 @@ import forecast.ForecasterManager as ForecasterManager
 import forecast.OptimalScheduler as OptimalScheduler
 import sqlDB as db
 import blockchain as Blockchain
+import numpy as np
 
 
 # LOGGER COLORS
 logger = setup_logger()
+
+# Helper function per convertir tipus NumPy/Pandas a tipus natius de Python
+def convert_to_json_serializable(obj):
+    """
+    Converteix recursivament objectes amb tipus NumPy/Pandas a tipus natius de Python
+    per permetre la serialització JSON.
+    """
+    if isinstance(obj, dict):
+        return {key: convert_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return convert_to_json_serializable(obj.tolist())
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
 
 # PARÀMETRES DE L'EXECUCIÓ
 HOSTNAME = '0.0.0.0'
@@ -417,6 +441,10 @@ def get_model_metrics(model_name):
         
         metrics = model_db.get('metrics', {})
         train_val_test = model_db.get('train_val_test_split', {})
+        
+        # Convertir tipus NumPy/Pandas a tipus natius de Python
+        metrics = convert_to_json_serializable(metrics)
+        train_val_test = convert_to_json_serializable(train_val_test)
         
         response = {
             "status": "ok",
