@@ -665,8 +665,8 @@
                 row.innerHTML = `
                     <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;" colspan="3">
                         <strong>Comparació amb Baselines:</strong><br>
-                        ✅ Millora vs Persistència: ${baselineMetrics.improvement_vs_persistence}%<br>
-                        ✅ Millora vs Mitjana Mòbil: ${baselineMetrics.improvement_vs_ma}%
+                            Millora vs Persistència: ${baselineMetrics.improvement_vs_persistence}%<br>
+                            Millora vs Mitjana Mòbil: ${baselineMetrics.improvement_vs_ma}%
                     </td>
                 `;
                 tableBody.appendChild(row);
@@ -678,7 +678,7 @@
             let html = "<ul style='list-style: none; padding-left: 0;'>";
 
             if (trainValTest) {
-                html += `<li><strong>📊 Divisió de dades:</strong></li>`;
+                html += `<li><strong>  Divisió de dades:</strong></li>`;
                 html += `<li style="margin-left: 20px;">• Train: ${trainValTest.train_size} mostres (60%)</li>`;
                 html += `<li style="margin-left: 20px;">• Validation: ${trainValTest.val_size} mostres (20%)</li>`;
                 html += `<li style="margin-left: 20px;">• Test: ${trainValTest.test_size} mostres (20%)</li>`;
@@ -689,7 +689,7 @@
                 for (let step of metrics.steps) {
                     if (step.step_name === "Preparació DataFrames") {
                         const m = step.metrics;
-                        html += `<li style="margin-top: 10px;"><strong>📋 Dataset fusionat:</strong></li>`;
+                        html += `<li style="margin-top: 10px;"><strong> Dataset fusionat:</strong></li>`;
                         html += `<li style="margin-left: 20px;">• Files: ${m.merged_rows}</li>`;
                         html += `<li style="margin-left: 20px;">• Columnes: ${m.merged_columns}</li>`;
                         html += `<li style="margin-left: 20px;">• Cobertura temporal: ${m.temporal_coverage_days} dies</li>`;
