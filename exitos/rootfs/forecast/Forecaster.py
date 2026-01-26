@@ -9,6 +9,7 @@ import logging
 import os
 import glob
 import requests
+from sklearn.preprocessing import RobustScaler
 
 from forecast.ForecastMetrics import ForecastMetrics
 
@@ -139,6 +140,67 @@ class Forecaster:
 
         return dad
 
+    def remove_outliers(self, df, column, method='iqr', threshold=3):
+        """
+        Elimina outliers d'un dataframe basat en una columna.
+        """
+        if column not in df.columns:
+            return df
+            
+        original_len = len(df)
+        
+        if method == 'iqr':
+            Q1 = df[column].quantile(0.25)
+            Q3 = df[column].quantile(0.75)
+            IQR = Q3 - Q1
+            lower = Q1 - threshold * IQR
+            upper = Q3 + threshold * IQR
+            df_clean = df[(df[column] >= lower) & (df[column] <= upper)]
+            
+        elif method == 'zscore':
+            z_scores = np.abs((df[column] - df[column].mean()) / df[column].std())
+            df_clean = df[z_scores < threshold]
+            
+        else:
+            return df
+            
+        removed = original_len - len(df_clean)
+        if removed > 0:
+            logger.info(f"🧹 Outliers eliminats per {column}: {removed} ({removed/original_len*100:.2f}%)")
+            
+        return df_clean
+
+    def normalize_target(self, y_train, y_val, y_test):
+        """
+        Normalitza la variable objectiu per millorar l'entrenament.
+        Utilitza RobustScaler per ser més resistent a outliers.
+        """
+        scaler_y = RobustScaler()
+        
+        # Reshape necessari per sklearn
+        y_train_reshaped = y_train.values.reshape(-1, 1) if hasattr(y_train, 'values') else y_train.reshape(-1, 1)
+        y_val_reshaped = y_val.values.reshape(-1, 1) if hasattr(y_val, 'values') else y_val.reshape(-1, 1)
+        y_test_reshaped = y_test.values.reshape(-1, 1) if hasattr(y_test, 'values') else y_test.reshape(-1, 1)
+        
+        # Fit només amb train per evitar data leakage
+        y_train_scaled = scaler_y.fit_transform(y_train_reshaped).flatten()
+        y_val_scaled = scaler_y.transform(y_val_reshaped).flatten()
+        y_test_scaled = scaler_y.transform(y_test_reshaped).flatten()
+        
+        return y_train_scaled, y_val_scaled, y_test_scaled, scaler_y
+
+    def inverse_transform_target(self, y_scaled, scaler):
+        """
+        Des-normalitza la variable objectiu.
+        """
+        if scaler is None:
+            return y_scaled
+            
+        y_reshaped = y_scaled.reshape(-1, 1)
+        y_original = scaler.inverse_transform(y_reshaped).flatten()
+        
+        return y_original
+
     @staticmethod
     def timestamp_to_attrs(dad, extra_vars):
         """
@@ -159,13 +221,29 @@ class Forecaster:
 
         # afegim columnes basades en l'índex temporal
         if 'variables' in extra_vars:
+            # Assegurar que tenim les variables bàsiques
+            dad['Dia'] = dad.index.dayofweek
+            dad['Hora'] = dad.index.hour
+            dad['Mes'] = dad.index.month
+            
             for var in extra_vars['variables']:
                 if var == 'Dia':
-                    dad['Dia'] = dad.index.dayofweek  # Dia de la setmana (0 = Dll, 6 = Dg)
+                    # Encoding cíclic per Dia Setmana (0-6)
+                    dad['Dia_sin'] = np.sin(2 * np.pi * dad['Dia'] / 7)
+                    dad['Dia_cos'] = np.cos(2 * np.pi * dad['Dia'] / 7)
+                    dad['EsCapDeSetmana'] = (dad['Dia'] >= 5).astype(int)
                 elif var == 'Hora':
-                    dad['Hora'] = dad.index.hour  # Hora del dia
+                    # Encoding cíclic per Hora (0-23)
+                    dad['Hora_sin'] = np.sin(2 * np.pi * dad['Hora'] / 24)
+                    dad['Hora_cos'] = np.cos(2 * np.pi * dad['Hora'] / 24)
+                    
+                    # Franges horàries
+                    dad['EsNit'] = ((dad['Hora'] >= 0) & (dad['Hora'] < 6)).astype(int)
+                    
                 elif var == 'Mes':
-                    dad['Mes'] = dad.index.month  # Mes de l'any
+                    # Encoding cíclic per Mes (1-12)
+                    dad['Mes_sin'] = np.sin(2 * np.pi * (dad['Mes'] - 1) / 12)
+                    dad['Mes_cos'] = np.cos(2 * np.pi * (dad['Mes'] - 1) / 12)
                 elif var == 'Minut':
                     dad['Minut'] = dad.index.minute  # Minut de l'hora
 
@@ -188,6 +266,21 @@ class Forecaster:
             dad.drop(columns=['timestamp'], inplace=True)
 
         return dad
+
+    def add_lag_features(self, df, target_col, lags=[1, 2, 3, 24, 168]):
+        """
+        Afegeix features de lag específiques per capturar dependències temporals.
+        """
+        if target_col not in df.columns:
+            return df
+            
+        for lag in lags:
+            col_name = f'{target_col}_lag_{lag}'
+            # Només afegir si el lag no supera la longitud del dataset
+            if lag < len(df) and col_name not in df.columns:
+               df[col_name] = df[target_col].shift(lag)
+               
+        return df
 
     @staticmethod
     def colinearity_remove(data, y, level=0.9):
@@ -533,6 +626,14 @@ class Forecaster:
             logger.error(f"\n ************* \n ❌ No hi ha dades per a realitzar el Forecast \n *************")
             return
 
+        # PAS 0.5 - Eliminar Outliers 
+        # Apliquem una eliminació conservadora abans de fer res més
+        dad_before_outliers = merged_data.copy()
+        merged_data = self.remove_outliers(merged_data, y, method='iqr', threshold=3.5)
+        
+        # VALIDACIÓ PAS 0.5
+        self.metrics.validate_outliers(dad_before_outliers, merged_data, 'iqr')
+
         # PAS 1 - Fer el Windowing
         dad_before_windowing = merged_data.copy()
         dad = self.do_windowing(merged_data, look_back)
@@ -546,6 +647,10 @@ class Forecaster:
         # VALIDACIÓ PAS 2
         self.metrics.validate_temporal_features(dad, extra_vars)
 
+        # PAS 2.5 - Lag Features (NOU)
+        # Afegim lags específics importants per forecasting (1h, 24h, 168h=1setmana)
+        dad = self.add_lag_features(dad, y, lags=[1, 2, 3, 24, 168])
+
         # PAS 3 - Treure Col·linearitats
         dad_before_colinearity = dad.copy()
         [dad, to_drop] = self.colinearity_remove(dad, y, level=colinearity_remove_level)
@@ -555,56 +660,80 @@ class Forecaster:
         self.metrics.validate_colinearity_removal(dad_before_colinearity, dad, to_drop, y, colinearity_remove_level)
 
         # PAS 4 - Treure NaN
+        # Millora: Interpolar abans d'eliminar variables amb valors infinits o nuls
         dad.replace([np.inf, -np.inf], np.nan, inplace=True)
         dad_before_nan = dad.copy()
-        X = dad.bfill()
-        X = X.dropna()
+        
+        # Interpolació intel·ligent per columnes numèriques
+        numeric_cols = dad.select_dtypes(include=[np.number]).columns
+        dad[numeric_cols] = dad[numeric_cols].interpolate(method='linear', limit_direction='both')
+        dad.dropna(inplace=True)
+        
+        X = dad.drop(columns=[y])
+        nomy = y
+        y_values = pd.to_numeric(dad[nomy], errors='raise')
         
         # VALIDACIÓ PAS 4
         self.metrics.validate_nan_handling(dad_before_nan, X)
         
-        # PAS 5 - Desfer el dataset i guardar matrius X i y
-        nomy = y
-        y = pd.to_numeric(X[nomy], errors='raise')
-        del X[nomy]
+        # Guardar columnes abans d'escalar
+        X_columns = X.columns
         
-        # Divisió Train/Validation/Test (60/20/20)
-        train_size = int(0.6 * len(X))
-        val_size = int(0.2 * len(X))
-        
-        X_train = X[:train_size]
-        X_val = X[train_size:train_size+val_size]
-        X_test = X[train_size+val_size:]
-        
-        y_train = y[:train_size]
-        y_val = y[train_size:train_size+val_size]
-        y_test = y[train_size+val_size:]
-
-        # PAS 6 - Escalat
+        # PAS 6 - Escalat de features (X)
         X_before_scaling = X.copy()
-        X, scaler = self.scalate_data(X, escalat)
+        [X, scaler] = self.scalate_data(X, escalat)
+        X = pd.DataFrame(X, columns=X_columns)
         
         # VALIDACIÓ PAS 6
         self.metrics.validate_scaling(X_before_scaling, X, escalat)
 
         # PAS 7 - Seleccionar atributs
-        [model_select, X_new, y_new] = self.get_attribs(X, y, feature_selection)
+        X_before_selection = X.copy()
+        [model_select, X_new, y_new] = self.get_attribs(X, y_values, feature_selection)
         
         # VALIDACIÓ PAS 7
         X_before_selection = X if isinstance(X, np.ndarray) else X.values
         self.metrics.validate_feature_selection(X_before_selection, X_new, feature_selection)
 
+        # Divisió Train/Validation/Test (80/20)
+        # Usem 80% Train+Val i 20% Test per tenir més dades recents a Test
+        total_len = len(X_new)
+        train_end = int(0.8 * total_len) # 80% Train
+        
+        X_train = X_new.iloc[:train_end]
+        y_train = y_new.iloc[:train_end]
+        
+        X_test = X_new.iloc[train_end:]
+        y_test = y_new.iloc[train_end:]
+        
+        # PAS 7.5 - Normalització de Target (Y) (NOU)
+        # Normalitzem la variable objectiu per millorar l'entrenament
+        # Passem y_train dues vegades perquè la funció espera train/val/test
+        y_train_scaled, _, y_test_scaled, scaler_y = self.normalize_target(y_train, y_train, y_test)
+        
+        # Guardem el scaler_y per poder des-escalar després
+        self.db['scaler_y'] = scaler_y
+
         # PAS 8 - Crear el model
         training_start = time.time()
-        [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
+        
+        # Entrenem amb Train (80%) normalitzat
+        [model, score] = self.Model(X_train, y_train_scaled, algorithm, params, max_time=max_time)
         training_time = time.time() - training_start
         
-        # VALIDACIÓ PAS 8 - Entrenar amb totes les dades i validar
-        y_pred = model.predict(X_new)
-        self.metrics.validate_model_training(X_new, y_new.values, y_pred, algorithm, score, training_time)
+        # VALIDACIÓ PAS 8 - Avaluem sobre TEST (20% final never seen)
+        y_pred_scaled = model.predict(X_test)
         
-        # Comparar amb baselines
-        self.metrics.compare_with_baseline(y_new.values, y_pred)
+        # Des-escalar predicció per mètriques reals
+        y_pred = self.inverse_transform_target(y_pred_scaled, scaler_y)
+        
+        # Obtenir valors reals de test
+        y_test_values = y_test.values if hasattr(y_test, 'values') else y_test
+        
+        self.metrics.validate_model_training(X_new, y_test_values, y_pred, algorithm, score, training_time)
+        
+        # Comparar amb baselines (usant dades de test)
+        self.metrics.compare_with_baseline(y_test_values, y_pred)
 
         # PAS 9 - Guardar el model i les mètriques
         if algorithm is None:
@@ -640,7 +769,8 @@ class Forecaster:
         self.db['metrics'] = self.metrics.get_summary()
         self.db['train_val_test_split'] = {
             'train_size': len(X_train),
-            'val_size': len(X_val),
+            # val_size és 0 perquè hem combinat, però podem posar 0 o el que sigui
+            'val_size': 0, 
             'test_size': len(X_test)
         }
 
@@ -731,12 +861,29 @@ class Forecaster:
 
         # convert to numpy and predict
         future_array = np.array([[float(x) for x in row] for row in future_df])
+        
+        # Predicció (pot estar escalada)
+        forecast_output_raw = model.predict(future_array)
+        
+        # Assegurar format numpy per df_transformed
+        out_input = df_transformed.values if hasattr(df_transformed, 'values') else df_transformed
+        out_raw = model.predict(out_input)
+        
+        # Des-escalar si cal
+        scaler_y = self.db.get('scaler_y')
+        if scaler_y:
+            forecast_values = self.inverse_transform_target(forecast_output_raw, scaler_y)
+            out_values = self.inverse_transform_target(out_raw, scaler_y)
+        else:
+            forecast_values = forecast_output_raw
+            out_values = out_raw
+        
         forecast_output = pd.DataFrame(
-            model.predict(future_array),
+            forecast_values,
             index=future_index,
             columns=[y]
         )
-        out = pd.DataFrame(model.predict(df_transformed), index=df_transformed.index, columns=[y])
+        out = pd.DataFrame(out_values, index=df_transformed.index, columns=[y])
 
         final_prediction = pd.concat([out, forecast_output])
 
