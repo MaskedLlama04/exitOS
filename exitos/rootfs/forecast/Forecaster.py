@@ -426,18 +426,25 @@ class Forecaster:
 
         # 1. Preparar sensor principal (Target)
         if sensor is not None and not sensor.empty:
+            sensor = sensor.copy() # Evitar SettingWithCopy warning
             sensor['timestamp'] = pd.to_datetime(sensor['timestamp']).dt.tz_localize(None)
             sensor.set_index('timestamp', inplace=True)
-            # Resample horari fent la mitjana
-            sensor = sensor.resample('h').mean()
+            
+            # Assegurar que 'value' és numèric
+            if 'value' in sensor.columns:
+                sensor['value'] = pd.to_numeric(sensor['value'], errors='coerce')
+            
+            # Resample horari fent la mitjana (només columnes numèriques per evitar errors)
+            sensor = sensor.resample('h').mean(numeric_only=True)
             merged_data = sensor.copy()
         
         # 2. Preparar dades meteo
         if meteo is not None and not meteo.empty:
+            meteo = meteo.copy()
             meteo['timestamp'] = pd.to_datetime(meteo['timestamp']).dt.tz_localize(None)
             meteo.set_index('timestamp', inplace=True)
-            # Meteo ja sol venir horària, però per seguretat fem resample (si n'hi ha més d'una, la mitjana)
-            meteo = meteo.resample('h').mean()
+            # Meteo ja sol venir horària, però per seguretat fem resample
+            meteo = meteo.resample('h').mean(numeric_only=True)
             
             if merged_data.empty:
                 merged_data = meteo
@@ -452,12 +459,12 @@ class Forecaster:
                     df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
                     df.set_index('timestamp', inplace=True)
                     
+                    # Assegurar que 'value' és numèric
+                    if 'value' in df.columns:
+                        df['value'] = pd.to_numeric(df['value'], errors='coerce')
+
                     # Resample horari
-                    df = df.resample('h').mean()
-                    
-                    # Renombrar columna 'value' per evitar conflictes si cal, 
-                    # encara que el merge sol gestionar sufixos, és millor ser explícit si es pogués.
-                    # Com que el codi original confia en el merge automàtic, ho mantindrem simple.
+                    df = df.resample('h').mean(numeric_only=True)
                     
                     if merged_data.empty:
                         merged_data = df
