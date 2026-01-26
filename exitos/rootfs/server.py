@@ -439,50 +439,18 @@ def get_model_metrics(model_name):
         with open(model_path, 'rb') as f:
             model_db = joblib.load(f)
         
-        metrics_summary = model_db.get('metrics', {})
+        metrics = model_db.get('metrics', {})
+        train_val_test = model_db.get('train_val_test_split', {})
         
-        # Convertir a format web
-        if metrics_summary:
-            web_metrics = {
-                'summary': {
-                    'total_steps': metrics_summary.get('total_steps', 0),
-                    'valid_steps': metrics_summary.get('valid_steps', 0),
-                    'success_rate': metrics_summary.get('success_rate', 0)
-                },
-                'steps': []
-            }
-            
-            for step_log in metrics_summary.get('steps', []):
-                step_data = {
-                    'number': step_log['step_number'],
-                    'name': step_log['step_name'],
-                    'status': step_log['status'],
-                    'metrics': []
-                }
-                
-                for key, value in step_log['metrics'].items():
-                    if key != 'valid':
-                        if isinstance(value, float):
-                            display_value = f"{value:.4f}" if abs(value) >= 0.01 else f"{value:.6f}"
-                        elif isinstance(value, list):
-                            display_value = f"{len(value)} elements"
-                        else:
-                            display_value = str(value)
-                        
-                        step_data['metrics'].append({
-                            'name': key.replace('_', ' ').title(),
-                            'value': display_value,
-                            'raw_value': value
-                        })
-                
-                web_metrics['steps'].append(step_data)
-            
-            response = convert_to_json_serializable({
-                "status": "ok",
-                "metrics": web_metrics
-            })
-        else:
-            response = {"status": "no_metrics", "message": "Aquest model no té mètriques"}
+        # Convertir tipus NumPy/Pandas a tipus natius de Python
+        metrics = convert_to_json_serializable(metrics)
+        train_val_test = convert_to_json_serializable(train_val_test)
+        
+        response = {
+            "status": "ok",
+            "metrics": metrics,
+            "train_val_test_split": train_val_test
+        }
         
         return json.dumps(response)
     
