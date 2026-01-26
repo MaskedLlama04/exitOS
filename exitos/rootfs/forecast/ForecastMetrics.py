@@ -129,6 +129,32 @@ class ForecastMetrics:
         
         self.log_step("Preparació DataFrames", metrics)
         return metrics
+
+    def validate_outliers(self, df_before, df_after, method):
+        """
+        PAS 0.5: Validació de l'eliminació d'outliers
+        """
+        if len(df_before) == 0:
+            return {'valid': True, 'message': 'Empty dataframe'}
+            
+        removed_count = len(df_before) - len(df_after)
+        percentage_removed = round(removed_count / len(df_before) * 100, 2)
+        
+        metrics = {
+            'method': method,
+            'rows_before': len(df_before),
+            'rows_after': len(df_after),
+            'outliers_removed': removed_count,
+            'percentage_removed': percentage_removed,
+            'valid': True
+        }
+        
+        if percentage_removed > 10:
+            metrics['valid'] = False
+            logger.warning(f"⚠️  S'han eliminat molts outliers: {percentage_removed}%")
+            
+        self.log_step("Eliminació Outliers", metrics)
+        return metrics
     
     def validate_windowing(self, original_df, windowed_df, look_back):
         """
