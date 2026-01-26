@@ -413,6 +413,26 @@ class Forecaster:
         else:
             raise ValueError('Paràmetres en format incorrecte!')
 
+
+    @staticmethod
+    def remove_outliers_iqr(df, column='value', threshold=1.5):
+        """
+        Elimina outliers utilitzant el mètode IQR
+        """
+        q1 = df[column].quantile(0.25)
+        q3 = df[column].quantile(0.75)
+        iqr = q3 - q1
+
+        lower_bound = q1 - threshold * iqr
+        upper_bound = q3 + threshold * iqr
+
+        filtered_df = df[
+            (df[column] >= lower_bound) &
+            (df[column] <= upper_bound)
+        ]
+
+        return filtered_df
+
     @staticmethod
     def prepare_dataframes(sensor, meteo, extra_sensors, merge_type='outer'):
         """
@@ -510,8 +530,19 @@ class Forecaster:
 
         # Netejar outliers
         logger.info("🧹 Netejant outliers de les dades...")
-        data_clean = self.metrics.remove_outliers_iqr(data, column='value', threshold=1.5)
-        
+        data_clean = self.remove_outliers_iqr(data, column='value', threshold=1.5)
+            removed_pct = 100 * (1 - len(data_clean) / len(data))
+            self.metrics.log_step(
+                "Eliminació d'Outliers",
+                {
+                    "rows_before": len(data),
+                    "rows_after": len(data_clean),
+                    "removed_percentage": round(removed_pct, 2),
+                    "threshold": 1.5,
+                    "valid": removed_pct < 20
+                }
+            )
+            
         if len(data_clean) < len(data) * 0.7:
             logger.warning(f"⚠️  S'han eliminat massa dades ({len(data) - len(data_clean)}). Usant threshold més permissiu.")
             data_clean = self.metrics.remove_outliers_iqr(data, column='value', threshold=2.5)
