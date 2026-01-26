@@ -112,9 +112,8 @@ class ForecastMetrics:
             'extra_sensors_count': len(extra_sensors) if extra_sensors else 0,
             'merged_rows': len(merged_df),
             'merged_columns': len(merged_df.columns),
-            'null_percentage': round(merged_df.isnull().sum().sum() / (merged_df.shape[0] * merged_df.shape[1]) * 100, 2),
-            'duplicates_removed': len(sensor_df) - len(sensor_df.drop_duplicates(subset=['timestamp'])),
-            'temporal_coverage_days': (merged_df['timestamp'].max() - merged_df['timestamp'].min()).days,
+            'null_percentage': round(merged_df.isnull().sum().sum() / max((merged_df.shape[0] * merged_df.shape[1]), 1) * 100, 2),
+            'temporal_coverage_days': (merged_df['timestamp'].max() - merged_df['timestamp'].min()).days if not merged_df.empty else 0,
             'valid': True
         }
         
@@ -123,37 +122,17 @@ class ForecastMetrics:
             metrics['valid'] = False
             logger.warning(f"⚠️  Massa valors nuls: {metrics['null_percentage']}%")
         
-        if metrics['merged_rows'] < metrics['sensor_rows'] * 0.5:
-            metrics['valid'] = False
-            logger.warning(f"⚠️  S'han perdut massa registres en el merge")
+        # Validació ajustada per suportar resampling (e.g. minuts -> hores)
+        # En lloc de mirar rows bruts, mirem si tenim prou files per la cobertura temporal (aprox 24 per dia)
+        expected_rows_hourly = metrics['temporal_coverage_days'] * 24
         
-        self.log_step("Preparació DataFrames", metrics)
-        return metrics
+        if metrics['merged_rows'] < expected_rows_hourly * 0.7:  # Deixem marge del 30% de missings
+             # Només disparem warning si també es perd molt respecte l'original (per si l'original ja era horari)
+             if metrics['merged_rows'] < metrics['sensor_rows'] * 0.5:
+                metrics['valid'] = False
+                logger.warning(f"⚠️  Possibles dades perdudes: {metrics['merged_rows']} files per {metrics['temporal_coverage_days']} dies")
 
-    def validate_outliers(self, df_before, df_after, method):
-        """
-        PAS 0.5: Validació de l'eliminació d'outliers
-        """
-        if len(df_before) == 0:
-            return {'valid': True, 'message': 'Empty dataframe'}
-            
-        removed_count = len(df_before) - len(df_after)
-        percentage_removed = round(removed_count / len(df_before) * 100, 2)
-        
-        metrics = {
-            'method': method,
-            'rows_before': len(df_before),
-            'rows_after': len(df_after),
-            'outliers_removed': removed_count,
-            'percentage_removed': percentage_removed,
-            'valid': True
-        }
-        
-        if percentage_removed > 10:
-            metrics['valid'] = False
-            logger.warning(f"⚠️  S'han eliminat molts outliers: {percentage_removed}%")
-            
-        self.log_step("Eliminació Outliers", metrics)
+        self.log_step("Preparació DataFrames", metrics)
         return metrics
     
     def validate_windowing(self, original_df, windowed_df, look_back):
