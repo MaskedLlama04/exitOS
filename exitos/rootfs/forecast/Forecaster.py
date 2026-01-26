@@ -419,19 +419,25 @@ class Forecaster:
         """
         Elimina outliers utilitzant el mètode IQR
         """
-        q1 = df[column].quantile(0.25)
-        q3 = df[column].quantile(0.75)
-        iqr = q3 - q1
 
-        lower_bound = q1 - threshold * iqr
-        upper_bound = q3 + threshold * iqr
+        df = df.copy()
 
-        filtered_df = df[
-            (df[column] >= lower_bound) &
-            (df[column] <= upper_bound)
-        ]
+        # Convertir a numèric 
+        df[column] = pd.to_numeric(df[column], errors='coerce')
 
-        return filtered_df
+        # Eliminar NaNs abans de calcular quantils
+        df = df.dropna(subset=[column])
+
+        if df.empty:
+            return df
+            q1 = df[column].quantile(0.25)
+            q3 = df[column].quantile(0.75)
+            iqr = q3 - q1
+
+            lower_bound = q1 - threshold * iqr
+            upper_bound = q3 + threshold * iqr
+
+            return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
 
     @staticmethod
     def prepare_dataframes(sensor, meteo, extra_sensors, merge_type='outer'):
