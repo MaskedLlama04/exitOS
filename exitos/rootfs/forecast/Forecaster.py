@@ -413,95 +413,68 @@ class Forecaster:
         else:
             raise ValueError('Paràmetres en format incorrecte!')
 
-
     @staticmethod
-    def remove_outliers_iqr(df, column='value', threshold=1.5):
+    def prepare_dataframes(sensor, meteo, extra_sensors):
         """
-        Elimina outliers utilitzant el mètode IQR
-        """
-
-        df = df.copy()
-
-        # Convertir a numèric 
-        df[column] = pd.to_numeric(df[column], errors='coerce')
-
-        # Eliminar NaNs abans de calcular quantils
-        df = df.dropna(subset=[column])
-
-        if df.empty:
-            return df
-        
-        q1 = df[column].quantile(0.25)
-        q3 = df[column].quantile(0.75)
-        iqr = q3 - q1
-
-        lower_bound = q1 - threshold * iqr
-        upper_bound = q3 + threshold * iqr
-
-        return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
-
-    @staticmethod
-    def prepare_dataframes(sensor, meteo, extra_sensors, merge_type='outer'):
-        """
-        Prepara els df juntant-los en un de sol
+        Prepara els df juntant-los en un de sol.
+        Ara fa un resample horari promig (mean) en lloc de quedar-se amb el primer valor.
         :param sensor: Sensor objectiu del model
         :param meteo: Dades meteorològiques (pot ser None)
         :param extra_sensors: Sensors extra que es volen usar pel model (pot ser empty)
-        :param merge_type: Tipus de merge ('outer', 'inner', 'left'). Per defecte 'outer'
         """
-        merged_data = []
-        
-        logger.info(f"📊 Preparant dataframes amb merge type: {merge_type}")
-        
-        sensor['timestamp'] = pd.to_datetime(sensor['timestamp']).dt.tz_localize(None).dt.floor('h')
-        sensor = sensor.drop_duplicates(subset=['timestamp'])
-        
-        logger.info(f"   Sensor: {len(sensor)} rows")
+        merged_data = pd.DataFrame()
 
-        if meteo is not None:
-            meteo['timestamp'] = pd.to_datetime(meteo['timestamp']).dt.tz_localize(None).dt.floor('h')
-            meteo = meteo.drop_duplicates(subset=['timestamp'])
-            logger.info(f"   Meteo: {len(meteo)} rows")
+        # 1. Preparar sensor principal (Target)
+        if sensor is not None and not sensor.empty:
+            sensor['timestamp'] = pd.to_datetime(sensor['timestamp']).dt.tz_localize(None)
+            sensor.set_index('timestamp', inplace=True)
+            # Resample horari fent la mitjana
+            sensor = sensor.resample('h').mean()
+            merged_data = sensor.copy()
+        
+        # 2. Preparar dades meteo
+        if meteo is not None and not meteo.empty:
+            meteo['timestamp'] = pd.to_datetime(meteo['timestamp']).dt.tz_localize(None)
+            meteo.set_index('timestamp', inplace=True)
+            # Meteo ja sol venir horària, però per seguretat fem resample (si n'hi ha més d'una, la mitjana)
+            meteo = meteo.resample('h').mean()
             
-            merged_data = pd.merge(sensor, meteo, on='timestamp', how=merge_type)
-            logger.info(f"   Després merge sensor+meteo: {len(merged_data)} rows ({merge_type})")
-        else:
-            merged_data = sensor
-
-        if extra_sensors is not None:
-            aux = pd.DataFrame()
-            merged_extras = pd.DataFrame()
-            if len(extra_sensors) == 1:
-                first_key = next(iter(extra_sensors))
-                extra_sensors[first_key]['timestamp'] = pd.to_datetime(
-                    extra_sensors[first_key]['timestamp']).dt.tz_localize(None).dt.floor('h')
-                extra_sensors[first_key] = extra_sensors[first_key].drop_duplicates(subset=['timestamp'])
-                logger.info(f"   Extra sensor ({first_key}): {len(extra_sensors[first_key])} rows")
-                merged_extras = pd.concat([sensor, extra_sensors[first_key]], ignore_index=True)
+            if merged_data.empty:
+                merged_data = meteo
             else:
-                for i in extra_sensors:
-                    extra_sensors[i]['timestamp'] = pd.to_datetime(extra_sensors[i]['timestamp']).dt.tz_localize(
-                        None).dt.floor('h')
-                    extra_sensors[i] = extra_sensors[i].drop_duplicates(subset=['timestamp'])
-                    logger.info(f"   Extra sensor ({i}): {len(extra_sensors[i])} rows")
-                    if aux.empty:
-                        aux = extra_sensors[i]
+                merged_data = pd.merge(merged_data, meteo, left_index=True, right_index=True, how='outer')
+
+        # 3. Preparar sensors extra
+        if extra_sensors is not None:
+             for key, df_extra in extra_sensors.items():
+                if df_extra is not None and not df_extra.empty:
+                    df = df_extra.copy()
+                    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+                    df.set_index('timestamp', inplace=True)
+                    
+                    # Resample horari
+                    df = df.resample('h').mean()
+                    
+                    # Renombrar columna 'value' per evitar conflictes si cal, 
+                    # encara que el merge sol gestionar sufixos, és millor ser explícit si es pogués.
+                    # Com que el codi original confia en el merge automàtic, ho mantindrem simple.
+                    
+                    if merged_data.empty:
+                        merged_data = df
                     else:
-                        merged_extras = pd.merge(aux, extra_sensors[i], on='timestamp', how=merge_type)
-                        aux = merged_extras
+                        merged_data = pd.merge(merged_data, df, left_index=True, right_index=True, how='outer')
 
-            if not merged_extras.empty:
-                before_extra_merge = len(merged_data)
-                merged_data = pd.merge(merged_data, merged_extras, on='timestamp', how=merge_type)
-                logger.info(f"   Després merge amb extras: {len(merged_data)} rows (era {before_extra_merge})")
-                
-                if merged_data.get("value") is None:
-                    merged_data.rename(columns={'value_x': 'value'}, inplace=True)
+        # Si després de tot no tenim dades, retornem el sensor original processat (o buit)
+        if merged_data.empty:
+            return pd.DataFrame()
 
-        if merged_data is []: 
-            merged_data = sensor
+        # Rename value_x to value if needed (fix legacy merging naming issues)
+        if "value" not in merged_data.columns and "value_x" in merged_data.columns:
+             merged_data.rename(columns={'value_x': 'value'}, inplace=True)
+
+        # Reset index per tornar a tenir timestamp com a columna (compatible amb la resta de codi)
+        merged_data.reset_index(inplace=True)
         
-        logger.info(f"✅ Dataframes preparats: {len(merged_data)} rows finals")
         return merged_data
 
     def create_model(self, data, sensors_id, y, lat, lon, algorithm=None, params=None, escalat=None,
@@ -535,25 +508,6 @@ class Forecaster:
         if look_back is None:
             look_back = {-1: [25, 48]}
 
-        # Netejar outliers
-        logger.info("🧹 Netejant outliers de les dades...")
-        data_clean = self.remove_outliers_iqr(data, column='value', threshold=1.5)
-        removed_pct = 100 * (1 - len(data_clean) / len(data))
-        self.metrics.log_step(
-            "Eliminació d'Outliers",
-            {
-                "rows_before": len(data),
-                "rows_after": len(data_clean),
-                "removed_percentage": round(removed_pct, 2),
-                "threshold": 1.5,
-                "valid": removed_pct < 20
-            }
-        )
-            
-        if len(data_clean) < len(data) * 0.7:
-            logger.warning(f"⚠️  S'han eliminat massa dades ({len(data) - len(data_clean)}). Usant threshold més permissiu.")
-            data_clean = self.metrics.remove_outliers_iqr(data, column='value', threshold=2.5)
-
         # Descarregar dades meteo si no es proporcionen
         if meteo_data is not None and not data.empty:
             start_date = data['timestamp'].min().strftime("%Y-%m-%d")
@@ -585,11 +539,7 @@ class Forecaster:
                 meteo_data = None
 
         #PREP PAS 0 - preparar els df de meteo-data i dades extra
-        if len(merged_data) < len(data_clean) * 0.8:
-            logger.warning("⚠️  S'han perdut massa dades en el merge. Provant amb inner join...")
-            merged_data = self.prepare_dataframes(data_clean, meteo_data, extra_sensors_df, merge_type='inner')
-            logger.info(f"📊 Merged rows amb inner join: {len(merged_data)}")
-        
+        merged_data = self.prepare_dataframes(data, meteo_data, extra_sensors_df)
         merged_data.bfill(inplace=True)
         
         # VALIDACIÓ PAS 0
