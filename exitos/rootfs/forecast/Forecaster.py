@@ -703,11 +703,11 @@ class Forecaster:
         total_len = len(X_new)
         train_end = int(0.8 * total_len) # 80% Train
         
-        X_train = X_new.iloc[:train_end]
-        y_train = y_new.iloc[:train_end]
+        X_train = X_new.iloc[:train_end] if hasattr(X_new, 'iloc') else X_new[:train_end]
+        y_train = y_new.iloc[:train_end] if hasattr(y_new, 'iloc') else y_new[:train_end]
         
-        X_test = X_new.iloc[train_end:]
-        y_test = y_new.iloc[train_end:]
+        X_test = X_new.iloc[train_end:] if hasattr(X_new, 'iloc') else X_new[train_end:]
+        y_test = y_new.iloc[train_end:] if hasattr(y_new, 'iloc') else y_new[train_end:]
         
         # PAS 7.5 - Normalització de Target (Y) (NOU)
         # Normalitzem la variable objectiu per millorar l'entrenament
