@@ -627,6 +627,9 @@ class Forecaster:
             return
 
         # PAS 0.5 - Eliminar Outliers 
+        # Convertir a numèric per assegurar que quantiles funcionen
+        merged_data[y] = pd.to_numeric(merged_data[y], errors='coerce')
+        
         # Apliquem una eliminació conservadora abans de fer res més
         dad_before_outliers = merged_data.copy()
         merged_data = self.remove_outliers(merged_data, y, method='iqr', threshold=3.5)
@@ -647,7 +650,7 @@ class Forecaster:
         # VALIDACIÓ PAS 2
         self.metrics.validate_temporal_features(dad, extra_vars)
 
-        # PAS 2.5 - Lag Features (NOU)
+        # PAS 2.5 - Lag Features
         # Afegim lags específics importants per forecasting (1h, 24h, 168h=1setmana)
         dad = self.add_lag_features(dad, y, lags=[1, 2, 3, 24, 168])
 
