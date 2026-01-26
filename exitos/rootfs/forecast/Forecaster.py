@@ -531,17 +531,17 @@ class Forecaster:
         # Netejar outliers
         logger.info("🧹 Netejant outliers de les dades...")
         data_clean = self.remove_outliers_iqr(data, column='value', threshold=1.5)
-            removed_pct = 100 * (1 - len(data_clean) / len(data))
-            self.metrics.log_step(
-                "Eliminació d'Outliers",
-                {
-                    "rows_before": len(data),
-                    "rows_after": len(data_clean),
-                    "removed_percentage": round(removed_pct, 2),
-                    "threshold": 1.5,
-                    "valid": removed_pct < 20
-                }
-            )
+        removed_pct = 100 * (1 - len(data_clean) / len(data))
+        self.metrics.log_step(
+            "Eliminació d'Outliers",
+            {
+                "rows_before": len(data),
+                "rows_after": len(data_clean),
+                "removed_percentage": round(removed_pct, 2),
+                "threshold": 1.5,
+                "valid": removed_pct < 20
+            }
+        )
             
         if len(data_clean) < len(data) * 0.7:
             logger.warning(f"⚠️  S'han eliminat massa dades ({len(data) - len(data_clean)}). Usant threshold més permissiu.")
