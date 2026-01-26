@@ -430,14 +430,15 @@ class Forecaster:
 
         if df.empty:
             return df
-            q1 = df[column].quantile(0.25)
-            q3 = df[column].quantile(0.75)
-            iqr = q3 - q1
+        
+        q1 = df[column].quantile(0.25)
+        q3 = df[column].quantile(0.75)
+        iqr = q3 - q1
 
-            lower_bound = q1 - threshold * iqr
-            upper_bound = q3 + threshold * iqr
+        lower_bound = q1 - threshold * iqr
+        upper_bound = q3 + threshold * iqr
 
-            return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
+        return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
 
     @staticmethod
     def prepare_dataframes(sensor, meteo, extra_sensors, merge_type='outer'):
