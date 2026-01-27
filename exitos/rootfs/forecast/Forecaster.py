@@ -592,17 +592,8 @@ class Forecaster:
         y = pd.to_numeric(X[nomy], errors='raise')
         del X[nomy]
         
-        # Divisió Train/Validation/Test (60/20/20)
-        train_size = int(0.6 * len(X))
-        val_size = int(0.2 * len(X))
-        
-        X_train = X[:train_size]
-        X_val = X[train_size:train_size+val_size]
-        X_test = X[train_size+val_size:]
-        
-        y_train = y[:train_size]
-        y_val = y[train_size:train_size+val_size]
-        y_test = y[train_size+val_size:]
+        # Divisió Train/Validation/Test (60/20/20) - ELIMINAT, es fa al PAS 8
+        # (Codi antic eliminat per claredat)
 
         # PAS 6 - Escalat
         X_before_scaling = X.copy()
@@ -619,16 +610,33 @@ class Forecaster:
         self.metrics.validate_feature_selection(X_before_selection, X_new, feature_selection)
 
         # PAS 8 - Crear el model
+        # El model s'entrena només amb el 80% i es valida amb el 20% restant (dades noves)
+        split_idx = int(len(X_new) * 0.8)
+        
+        # Gestió segons tipus de dades (pandas o numpy)
+        if isinstance(X_new, pd.DataFrame):
+            X_train = X_new.iloc[:split_idx]
+            X_test = X_new.iloc[split_idx:]
+        else:
+            X_train = X_new[:split_idx]
+            X_test = X_new[split_idx:]
+            
+        y_train = y_new[:split_idx]
+        y_test = y_new[split_idx:]
+
         training_start = time.time()
-        [model, score] = self.Model(X_new, y_new.values, algorithm, params, max_time=max_time)
+        # Entrenem amb X_train (80%)
+        [model, score] = self.Model(X_train, y_train.values, algorithm, params, max_time=max_time)
         training_time = time.time() - training_start
         
-        # VALIDACIÓ PAS 8 - Entrenar amb totes les dades i validar
-        y_pred = model.predict(X_new)
-        self.metrics.validate_model_training(X_new, y_new.values, y_pred, algorithm, score, training_time)
+        # VALIDACIÓ PAS 8 - Validar amb dades de TEST (20% - Dades ocultes)
+        y_pred = model.predict(X_test)
         
-        # Comparar amb baselines
-        self.metrics.compare_with_baseline(y_new.values, y_pred)
+        # Passem X_test i y_test per calcular les mètriques reals sobre dades noves
+        self.metrics.validate_model_training(X_test, y_test.values, y_pred, algorithm, score, training_time)
+        
+        # Comparar amb baselines (usant dades de test)
+        self.metrics.compare_with_baseline(y_test.values, y_pred)
 
         # PAS 9 - Guardar el model i les mètriques
         if algorithm is None:
@@ -664,7 +672,7 @@ class Forecaster:
         self.db['metrics'] = self.metrics.get_summary()
         self.db['train_val_test_split'] = {
             'train_size': len(X_train),
-            'val_size': len(X_val),
+            'val_size': 0,
             'test_size': len(X_test)
         }
 
