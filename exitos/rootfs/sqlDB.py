@@ -640,15 +640,3 @@ class SqlDB():
         response = requests.post(url, headers=self.headers, json=data)
 
         logger.info(f"resposta {sensor_id}: {response.status_code} - {response.text}")
-
-
-
-
-
-    def debug(self):
-        response = get(f"{self.base_url}states", headers=self.headers)
-        if response.ok:
-            aux = pd.json_normalize(response.json())
-            return aux
-        return None
-
