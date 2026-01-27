@@ -324,7 +324,8 @@ def graphs_view():
 
         date_to_check_input = request.forms.getall("datetimes")
         if  not date_to_check_input:
-            start_date = datetime.today() - timedelta(days=30)
+            # Mostrar per defecte els últims 14 dies (abans era de 30)
+            start_date = datetime.today() - timedelta(days=14)
             end_date = datetime.today()
             date_label = None
         else:
@@ -522,6 +523,11 @@ def train_model():
         model_name = aux[1]
     if scaled == 'None': scaled = None
 
+    # CANVIAT: Filtrar dades d'entrenament als últims 14 dies
+    cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=14)
+    # Important normalitzar timezone si cal, però el pd.Timestamp.now() sol ser local.
+    # Les dades de la DB solen venir "guarres" de format, cal assegurar.
+    
     extra_sensors_df = {}
     if extra_sensors_id is None:
         extra_sensors_id = None
@@ -533,10 +539,18 @@ def train_model():
         extra_sensors_list = [s.strip() for s in extra_sensors_id.split(',') if s.strip()]
         for s in extra_sensors_list:
             aux = database.get_data_from_sensor(s)
+            # Filtrar dades
+            if not aux.empty and 'timestamp' in aux.columns:
+                aux['timestamp'] = pd.to_datetime(aux['timestamp'])
+                aux = aux[aux['timestamp'] >= cutoff_date]
             extra_sensors_df[s] = aux
 
 
     sensors_df = database.get_data_from_sensor(sensors_id)
+    # Filtrar dades
+    if not sensors_df.empty and 'timestamp' in sensors_df.columns:
+        sensors_df['timestamp'] = pd.to_datetime(sensors_df['timestamp'])
+        sensors_df = sensors_df[sensors_df['timestamp'] >= cutoff_date]
 
     logger.info(f"Selected model: {selected_model}, Config: {config}, Windowing: {look_back}")
 
