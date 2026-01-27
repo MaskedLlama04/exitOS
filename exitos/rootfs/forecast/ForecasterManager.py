@@ -81,13 +81,18 @@ def predict_consumption_production(model_name:str='newModel.pkl'):
     """
 
     forecaster = Forecast.Forecaster(debug=True)
-    forecaster.load_model(model_filename=model_name)
-    initial_data = forecaster.db['initial_data']
+    first_timestamp_metric = initial_data.index[0] if not initial_data.empty else None # Guardar per mètriques abans de tallar? No, volem mètriques reals.
 
     # Filtrar dades històriques als últims 14 dies per al forecast
     if not initial_data.empty and 'timestamp' in initial_data.columns:
-        cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=14)
+        # FIX: Ensure UTC comparison
+        cutoff_date = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=14)
         initial_data['timestamp'] = pd.to_datetime(initial_data['timestamp'])
+        
+        # Assegurar que tenim timezone UTC per comparar amb cutoff_date
+        if initial_data['timestamp'].dt.tz is None:
+            initial_data['timestamp'] = initial_data['timestamp'].dt.tz_localize('UTC')
+            
         initial_data = initial_data[initial_data['timestamp'] >= cutoff_date]
 
 
