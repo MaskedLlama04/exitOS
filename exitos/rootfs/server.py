@@ -523,7 +523,8 @@ def train_model():
         model_name = aux[1]
     if scaled == 'None': scaled = None
 
-    # CANVIAT: Ja no filtrem els 14 dies per a l'entrenament, usem TOT l'històric per a millor precisio
+    # Filtrar dades d'entrenament als últims 14 dies
+    cutoff_date = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=14)
     
     extra_sensors_df = {}
     if extra_sensors_id is None:
@@ -536,20 +537,22 @@ def train_model():
         extra_sensors_list = [s.strip() for s in extra_sensors_id.split(',') if s.strip()]
         for s in extra_sensors_list:
             aux = database.get_data_from_sensor(s)
-            # Normalització de data
+            # Filtrar dades
             if not aux.empty and 'timestamp' in aux.columns:
                 aux['timestamp'] = pd.to_datetime(aux['timestamp'])
                 if aux['timestamp'].dt.tz is None:
                      aux['timestamp'] = aux['timestamp'].dt.tz_localize('UTC')
+                aux = aux[aux['timestamp'] >= cutoff_date]
             extra_sensors_df[s] = aux
 
 
     sensors_df = database.get_data_from_sensor(sensors_id)
-    # Normalització de data
+    # Filtrar dades
     if not sensors_df.empty and 'timestamp' in sensors_df.columns:
         sensors_df['timestamp'] = pd.to_datetime(sensors_df['timestamp'])
         if sensors_df['timestamp'].dt.tz is None:
              sensors_df['timestamp'] = sensors_df['timestamp'].dt.tz_localize('UTC')
+        sensors_df = sensors_df[sensors_df['timestamp'] >= cutoff_date]
 
     logger.info(f"Selected model: {selected_model}, Config: {config}, Windowing: {look_back}")
 
