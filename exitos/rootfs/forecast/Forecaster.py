@@ -613,23 +613,39 @@ class Forecaster:
         # El model s'entrena només amb el 80% i es valida amb el 20% restant (dades noves)
         split_idx = int(len(X_new) * 0.8)
         
+        # PAS 8 - Crear el model
+        # CANVIAT: Dividir les dades en 60% Train, 20% Validation, 20% Test
+        train_idx = int(len(X_new) * 0.6)
+        val_idx = int(len(X_new) * 0.8) # 60% + 20% = 80%
+
         # Gestió segons tipus de dades (pandas o numpy)
         if isinstance(X_new, pd.DataFrame):
-            X_train = X_new.iloc[:split_idx]
-            X_test = X_new.iloc[split_idx:]
+            X_train = X_new.iloc[:train_idx]
+            X_val = X_new.iloc[train_idx:val_idx]
+            X_test = X_new.iloc[val_idx:]
         else:
-            X_train = X_new[:split_idx]
-            X_test = X_new[split_idx:]
+            X_train = X_new[:train_idx]
+            X_val = X_new[train_idx:val_idx]
+            X_test = X_new[val_idx:]
             
-        y_train = y_new[:split_idx]
-        y_test = y_new[split_idx:]
+        y_train = y_new[:train_idx]
+        y_val = y_new[train_idx:val_idx]
+        y_test = y_new[val_idx:]
 
         training_start = time.time()
-        # Entrenem amb X_train (80%)
+        # Entrenem amb X_train (60% només)
         [model, score] = self.Model(X_train, y_train.values, algorithm, params, max_time=max_time)
         training_time = time.time() - training_start
         
-        # VALIDACIÓ PAS 8 - Validar amb dades de TEST (20% - Dades ocultes)
+        # VALIDACIÓ INTERMÈDIA (20% Validation)
+        # Validem la bondat de l'entrenament sobre el conjunt de validació
+        try:
+            val_score = model.score(X_val, y_val.values)
+            logger.info(f"📊 Validation Score: {val_score:.4f}")
+        except Exception as e:
+            logger.warning(f"⚠️ No s'ha pogut calcular el Validation Score: {e}")
+
+        # VALIDACIÓ FINAL (20% Test - Dades ocultes finals)
         y_pred = model.predict(X_test)
         
         # Passem X_test i y_test per calcular les mètriques reals sobre dades noves
@@ -672,7 +688,7 @@ class Forecaster:
         self.db['metrics'] = self.metrics.get_summary()
         self.db['train_val_test_split'] = {
             'train_size': len(X_train),
-            'val_size': 0,
+            'val_size': len(X_val),
             'test_size': len(X_test)
         }
 
