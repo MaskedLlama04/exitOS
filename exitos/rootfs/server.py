@@ -983,112 +983,127 @@ def get_device_config_data(file_name):
 #region DAILY TASKS
 
 def daily_task():
-    hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
-    database.update_database("all")
-    database.clean_database_hourly_average()
+    
+    try:
+        # Actualitzem la base de dades
+        hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
+        database.update_database("all")
+        database.clean_database_hourly_average()
 
-    logger.warning(f"📈 [{hora_actual}] - INICIANT PROCÉS D'OPTIMITZACIÓ")
-    optimize()
+        # Optimització
+        logger.warning(f"📈 [{hora_actual}] - INICIANT PROCÉS D'OPTIMITZACIÓ")
+        optimize()
+    except Exception as e:
+        hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
+        logger.error(f" ❌ [{hora_actual}] - ERROR al daily task : {e}")
 
 def monthly_task():
-    today = datetime.today()
-    last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1) #últim dia del mes
-    if today == last_day:
-        sensors_id = database.get_all_sensors()
-        sensors_id = sensors_id['entity_id'].tolist()
+    try:
+        # Eliminació de dades sense cap activitat
+        today = datetime.today()
+        last_day = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1) #últim dia del mes
+        if today == last_day:
+            sensors_id = database.get_all_sensors()
+            sensors_id = sensors_id['entity_id'].tolist()
 
-        for sensor_id in sensors_id:
-            is_active = database.get_sensor_active(sensor_id)
-            if not is_active:
-                database.remove_sensor_data(sensor_id)
+            for sensor_id in sensors_id:
+                is_active = database.get_sensor_active(sensor_id)
+                if not is_active:
+                    database.remove_sensor_data(sensor_id)
 
-        logger.debug(f"Running monthly task at {datetime.now().strftime('%d-%b-%Y   %X')}" )
-
-def daily_train_model(model_config, model_name):
-    logger.debug(f"****** Running daily train for {model_name} ******")
-    algorithm = model_config.get('algorithm')
-    scaler = model_config.get('scaler_name', '')
+            logger.debug(f"Running monthly task at {datetime.now().strftime('%d-%b-%Y   %X')}" )
+            
+    except Exception as e:
+        hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
+        logger.error(f" ❌ [{hora_actual}] - ERROR al monthly task : {e}")
 
 def daily_forecast_task():
-    hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
-    database.update_database("all")
-    logger.debug(f"📈 [{hora_actual}] - STARTING DAILY FORECASTING")
-    models_saved = [os.path.basename(f) for f in glob.glob(forecast.models_filepath + "forecastings/*.pkl")]
-    for model in models_saved:
-        model_path = os.path.join(forecast.models_filepath, "forecastings/" ,f"{model}")
-        with open(model_path, 'rb') as f:
-            config = joblib.load(f)
-        aux = config.get('algorithm','')
-        if aux != '':
-            # daily_train_model(config, model)
-            logger.debug(f"     Running daily forecast for {model}")
-            forecast_model(model)
-    logger.debug("ENDING DAILY FORECASTS")
+    try:
+        hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
+        database.update_database("all")
+        logger.debug(f"📈 [{hora_actual}] - STARTING DAILY FORECASTING")
+        models_saved = [os.path.basename(f) for f in glob.glob(forecast.models_filepath + "forecastings/*.pkl")]
+        for model in models_saved:
+            model_path = os.path.join(forecast.models_filepath, "forecastings/" ,f"{model}")
+            with open(model_path, 'rb') as f:
+                config = joblib.load(f)
+            aux = config.get('algorithm','')
+            if aux != '':
+                # daily_train_model(config, model)
+                logger.debug(f"     Running daily forecast for {model}")
+                forecast_model(model)
+        logger.debug("ENDING DAILY FORECASTS")
+        
+    except Exception as e:
+        hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
+        logger.error(f" ❌ [{hora_actual}] - ERROR al daily forecast : {e}")
 
 def certificate_hourly_task():
-    logger.info(f"🕒 Running certificate hourly task at {datetime.now().strftime('%H:%M')}")
-    config_dir = forecast.models_filepath + 'config/user.config'
-    if os.path.exists(config_dir):
-        aux = joblib.load(config_dir)
-        consumption = aux['consumption']
-        generation = aux['generation']
-        public_key = aux['public_key']
-        private_key = aux['private_key']
+    try:
+        logger.info(f"🕒 Running certificate hourly task at {datetime.now().strftime('%H:%M')}")
+        config_dir = forecast.models_filepath + 'config/user.config'
+        if os.path.exists(config_dir):
+            aux = joblib.load(config_dir)
+            consumption = aux['consumption']
+            generation = aux['generation']
+            public_key = aux['public_key']
+            private_key = aux['private_key']
 
-        now = datetime.now()
-
-
-        if  database.get_sensor_active(generation) == 1 and generation != "None":
-            database.update_database(generation)
-            generation_data = database.get_latest_data_from_sensor(sensor_id=generation)
-            generation_timestamp = to_datetime(generation_data[0]).strftime("%Y-%m-%d %H:%M")
-            generation_value = generation_data[1]
-        else:
-            logger.warning(f"⚠️ Recorda seleccionar el sensor de Generació i marcar-lo a l'apartat 'Sensors' per a guardar.")
-            generation_timestamp = None
-            generation_value = None
-
-        if database.get_sensor_active(consumption) == 1 and consumption != 'None':
-            database.update_database(consumption)
-            consumption_data = database.get_latest_data_from_sensor(sensor_id=consumption)
-            consumption_timestamp = to_datetime(consumption_data[0]).strftime("%Y-%m-%d %H:%M")
-            consumption_value = consumption_data[1]
-        else:
-            logger.warning(f"⚠️ Recorda seleccionar el sensor de Consum i marcar-lo a l'apartat 'Sensors' per a guardar.")
-            consumption_timestamp = None
-            consumption_value = None
+            now = datetime.now()
 
 
-        to_send_string = f"Consumption_{consumption_timestamp}_{consumption_value}_Generation_{generation_timestamp}_{generation_value}_{public_key}_{now}"
-
-        res_certify = blockchain.certify_string(public_key, private_key, to_send_string)
-
-        if res_certify:
-            full_path = os.path.join(forecast.models_filepath, "config", "res_certify.pkl")
-
-            if os.path.exists(full_path):
-                data_to_save = joblib.load(full_path)
+            if  database.get_sensor_active(generation) == 1 and generation != "None":
+                database.update_database(generation)
+                generation_data = database.get_latest_data_from_sensor(sensor_id=generation)
+                generation_timestamp = to_datetime(generation_data[0]).strftime("%Y-%m-%d %H:%M")
+                generation_value = generation_data[1]
             else:
-                data_to_save = {}
+                logger.warning(f"⚠️ Recorda seleccionar el sensor de Generació i marcar-lo a l'apartat 'Sensors' per a guardar.")
+                generation_timestamp = None
+                generation_value = None
 
-            now = now.strftime("%Y-%m-%d %H:%M")
-
-            is_success = res_certify['success']
-            if is_success:
-                data_to_save[now] = res_certify['response']['transactionHash']
+            if database.get_sensor_active(consumption) == 1 and consumption != 'None':
+                database.update_database(consumption)
+                consumption_data = database.get_latest_data_from_sensor(sensor_id=consumption)
+                consumption_timestamp = to_datetime(consumption_data[0]).strftime("%Y-%m-%d %H:%M")
+                consumption_value = consumption_data[1]
             else:
-                data_to_save[now] = "Error"
-
-            data_to_save = dict(OrderedDict(sorted(data_to_save.items())[-10:]))
-
-            joblib.dump(data_to_save, full_path)
-
-        logger.info("🕒 CERTIFICAT HORARI COMPLETAT")
+                logger.warning(f"⚠️ Recorda seleccionar el sensor de Consum i marcar-lo a l'apartat 'Sensors' per a guardar.")
+                consumption_timestamp = None
+                consumption_value = None
 
 
-    else:
-        logger.warning(f"Encara no t'has unit a cap comunitat! \n"
-                       f"Recorda completar la teva configuració d'usuari des de l'apartat 'configuració' de la pàgina")
+            to_send_string = f"Consumption_{consumption_timestamp}_{consumption_value}_Generation_{generation_timestamp}_{generation_value}_{public_key}_{now}"
+
+            res_certify = blockchain.certify_string(public_key, private_key, to_send_string)
+
+            if res_certify:
+                full_path = os.path.join(forecast.models_filepath, "config", "res_certify.pkl")
+
+                if os.path.exists(full_path):
+                    data_to_save = joblib.load(full_path)
+                else:
+                    data_to_save = {}
+
+                now = now.strftime("%Y-%m-%d %H:%M")
+
+                is_success = res_certify['success']
+                if is_success:
+                    data_to_save[now] = res_certify['response']['transactionHash']
+                else:
+                    data_to_save[now] = "Error"
+
+                data_to_save = dict(OrderedDict(sorted(data_to_save.items())[-10:]))
+
+                joblib.dump(data_to_save, full_path)
+
+            logger.info("🕒 CERTIFICAT HORARI COMPLETAT")
+
+        else:
+            logger.warning(f"Encara no t'has unit a cap comunitat! \n"
+                        f"Recorda completar la teva configuració d'usuari des de l'apartat 'configuració' de la pàgina")
+    except Exception as e:
+        logger.error(f" ❌ [{datetime.now().strftime('%d:%m:%Y %H:%m')}] - ERROR sending hourly task: {e}")
 
 def config_optimized_devices_HA():
     try:
@@ -1136,9 +1151,14 @@ schedule.every().day.at("02:00").do(monthly_task)
 schedule.every().hour.at(":00").do(certificate_hourly_task)
 
 def run_scheduled_tasks():
+    logger.debug("🗓️ SCHEDULER STARTED")
     while True:
-        schedule.run_pending()
-        time.sleep(60)
+        try:
+            schedule.run_pending()
+        except Exception as e:
+            # Això evita que el thread mori si una tasca falla
+            logger.error(f"❌ Error en l'execució d'una tasca: {e}", exc_info=True)
+        time.sleep(1)
 
 scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
 scheduler_thread.start()
@@ -1149,8 +1169,7 @@ scheduler_thread.start()
 #region DEBUG REGION
 @app.route('/panik_function')
 def panik_function():
-    aux = database.debug()
-    logger.warning(aux)
+    pass
 
     # config_optimized_devices_HA()
 #endregion DEBUG REGION
@@ -1163,4 +1182,5 @@ def main():
 
 # Executem la funció main
 if __name__ == "__main__":
+    logger.info("🌳 ExitOS Iniciat")
     main()
