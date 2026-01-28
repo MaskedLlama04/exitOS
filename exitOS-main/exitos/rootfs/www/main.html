@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ca">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Control energètic eXIT</title>
+    <link rel="stylesheet" href="resources/mainStyle.css">
+    <link rel="icon" type="image/x-icon" href="static/favicon.ico">
+    <!--    <link rel="stylesheet" href="../resources/mainStyle.css">-->
+
+
+    <!-- llibreria d'icontes per al navbar-->
+    <script src="https://kit.fontawesome.com/d259d5cefc.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
+
+</head>
+
+<body>
+    <!--    NAVBAR     -->
+    % rebase('./www/base.html', title='Exitos')
+
+    <!--    HERO    -->
+    <div class="hero">
+        <h1> Benvingut/da a eXiT Control Energètic </h1>
+        <p> Gestiona, visualitza i optimitza la teva energia </p>
+        <img src="static/community.webp" alt="Community" class="hero-img">
+    </div>
+
+    <!--    PANIK BUTTON    -->
+    <div style="display: flex; justify-content: center; align-items: center;">
+        <button class="btn" onclick="panikButtonTest()" style="padding: 10px 20px;"><i class="fa-solid fa-skull"></i>
+            PANIK BUTTON!</button>
+    </div>
+
+    <!--    INFO CARDS    -->
+    <div class="container">
+        <!--   DISPOSITIUS    -->
+        <div class="info-cards-container">
+            <a href="./sensors" class="info-card">
+                <i class="fa-solid fa-square-check"></i>
+                <h3>Dispositius</h3>
+                <p>Selecciona els dispositius i entitats de les que vols monitoritzar i recollir dades.</p>
+            </a>
+            <!--     DATABASE       -->
+            <a href="./databaseView" class="info-card">
+                <i class="fa-solid fa-database"></i>
+                <h3>Base de Dades</h3>
+                <p>Visualitza les dades en un rang de temps personalitzat.</p>
+            </a>
+            <!--   MODEL     -->
+            <a href="./model" class="info-card">
+                <i class="fa-solid fa-brain"></i>
+                <h3>Crear Model</h3>
+                <p>Entrena models predictius d'ús energètic per sensors específics i realitza les prediccions amb
+                    aquests.</p>
+            </a>
+            <!--   OPTIMITZACIÓ     -->
+            <a href="./optimization" class="info-card">
+                <i class="fa-solid fa-clock"></i>
+                <h3>Optimització</h3>
+                <p>Selecciona assets per optimitzar i visualitza les configuracions creades per a les pròximes 24 hores.
+                </p>
+            </a>
+            <!--   CONFIG   -->
+            <a href="./config_page" class="info-card">
+                <i class="fa-solid fa-user-gear"></i>
+                <h3>Configuració</h3>
+                <p>Ajusta paràmetres d'usuari. Uneix-te o abandona una comunitat.</p>
+            </a>
+        </div>
+
+    </div>
+
+
+    <!--    PLANIFICACIÓ SONNEN -->
+    <div class="scheduler-container">
+        <h2>Horaris Configurats</h2>
+        <div id="scheduler-grid" class="scheduler-grid"> <!--AQUI ES POSA EL PLOTLY--> </div>
+    </div>
+
+
+    <!--    FORECASTS     -->
+    <div class="forecasts-container">
+        <h2>Forecastings Guardats</h2>
+        <div id="forecast-grid" class="forecast-grid"> <!--AQUI ES POSEN ELS FORECASTS--> </div>
+    </div>
+
+
+</body>
+
+<script>
+    /**
+     * Funció purament per testejar. ELIMINAR QUAN ACABI DE DEBUGAR
+     * **/
+    function panikButtonTest() {
+        fetch('panik_function')
+            .then(response => response.json())
+            .then(data => {
+                console.log("OK");
+            });
+    }
+
+    /**
+    * Obté amb 2 fetch els forecastings guardats i el graph d'optimització
+    **/
+    function onLoadPage() {
+        const sensors_list = {{!active_sensors_list
+    }};
+    const parent_div_forecast = document.getElementById("forecast-grid");
+    const parent_div_scheduler = document.getElementById("scheduler-grid");
+    sensors_list.forEach((sensor_id) => {
+        const fixed_name = sensor_id.replace(".pkl", "")
+
+        fetch('get_forecast_data/' + fixed_name)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "ok") {
+                    const container = document.createElement("div");
+                    container.className = "forecast-card";
+                    container.innerText = fixed_name;
+                    container.innerHTML = fixed_name;
+
+                    parent_div_forecast.appendChild(container);
+
+
+                    const timestamps = data.timestamps;
+                    const predictions = data.predictions;
+                    const realValues = data.real_values;
+                    const realValuesTimestamps = data.real_values_timestamps;
+                    const yesterday = data.yesterday_predictions;
+                    const yesterdayTimestamps = data.yesterday_timestamps;
+                    const startTimestamps = data.start_timestamp;
+                    const endTimestamps = data.last_timestamp;
+
+                    const traceReal = {
+                        x: realValuesTimestamps,
+                        y: realValues,
+                        mode: "lines",
+                        name: "Dades Reals",
+                        line: { color: 'orange', dash: 'dot' }
+                    };
+
+                    const tracePrediction = {
+                        x: timestamps,
+                        y: predictions,
+                        mode: 'lines',
+                        name: 'Predicció Avui',
+                        line: { color: 'green' }
+                    };
+
+                    const traceYesterday = {
+                        x: yesterdayTimestamps,
+                        y: yesterday,
+                        mode: 'lines',
+                        name: 'Predicció Ahir',
+                        line: { color: 'red', dash: 'dot' }
+                    }
+
+                    const layout = {
+                        title: 'Predicció vs Dades Reals',
+                        xaxis: { title: 'Temps', range: [startTimestamps, endTimestamps] },
+                        yaxis: { title: 'Consum (Kw)' },
+                        autosize: true,
+                        margin: { t: 40, r: 20, b: 50, l: 50 },
+                        height: 300,
+                        dragmode: 'pan',
+                        showlegend: false,
+                    };
+
+                    const config = { responsive: true };
+                    if (yesterday === "" && predictions === "") {
+                        container.innerHTML = 'No hi ha dades a mostrar pel model ' + sensor_id;
+                    }
+                    else if (yesterday === "") {
+                        Plotly.newPlot(container, [traceReal, tracePrediction], PlotlyTheme.mergeLayout(layout), config);
+                    }
+                    else if (predictions === "") {
+                        Plotly.newPlot(container, [traceYesterday], PlotlyTheme.mergeLayout(layout), config);
+                    }
+                    else {
+                        Plotly.newPlot(container, [traceReal, tracePrediction, traceYesterday], PlotlyTheme.mergeLayout(layout), config);
+                    }
+
+                }
+            });
+
+
+    });
+
+    fetch('get_scheduler_data')
+        .then(response => response.json())
+        .then(data => {
+            if (data !== "ERROR") {
+                const container = document.createElement("div");
+                container.className = "scheduler-card";
+                container.innerText = "Sonnen";
+
+                parent_div_scheduler.appendChild(container);
+
+                Plotly.newPlot(
+                    container,
+                    data.data,
+                    PlotlyTheme.mergeLayout(data.layout)
+                );
+            }
+        })
+    }
+
+    onLoadPage();
+
+</script>
+
+</html>

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Control energètic eXIT</title>
+    <link rel="stylesheet" href="resources/mainStyle.css">
+    <link rel="icon" type="image/x-icon" href="static/favicon.ico">
+    <!--    <link rel="stylesheet" href="../resources/mainStyle.css">-->
+
+    <!-- llibreria d'icontes per al navbar-->
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
+    <script src="https://kit.fontawesome.com/d259d5cefc.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+    <!--    NAVBAR     -->
+    % rebase('./www/base.html', title='Exitos')
+
+    <div class="container">
+        <!--    PAGE NAME AND DATE  -->
+        <div class="content-section">
+            <h1>Optimització</h1>
+            <h4>{{current_date}}</h4>
+            <button class="btn" id="test-optimization" onclick="TestOptimization()"><i
+                    style="font-size: medium; margin-bottom: 5px;" class="fa-solid fa-ghost"></i> Forçar
+                Optimització</button>
+            <button class="btn" id="new-device-config" onclick="NewDeviceConfig()"><i
+                    style="font-size: medium; margin-bottom: 5px;" class="fa-solid fa-plus"></i> Nova Configuració de
+                Dispositiu</button>
+        </div>
+
+        <!-- GRÀFICA OPTIMITZACIÓ -->
+        <div id="scheduler-grid" class="scheduler-grid"> </div>
+
+        <!--    PLANIFICACIÓ  -->
+        <div class="scheduler-container">
+            <div class="optimization-graphs-container" id="optimization-graphs-container">
+                <!-- AQUI ES POSEN LES CONFIGURACIONS GUARDADES -->
+            </div>
+        </div>
+    </div>
+
+
+    <div id="new-optimization-modal" class="modal hidden">
+        <!--  FORMULARI DINÀMIC PER CREAR UNA NOVA OPTIMITZACIÓ  -->
+        <div class="modal-content">
+            <span class="modal-close" onclick="CloseModal()"></span>
+            <h2>Nova Configuració de Dispositiu</h2>
+
+            <!--   TIPUS DE DISPOSITIU     -->
+            <div class="new-config-section">
+                <label for="device-type">Tipus de dispositiu: </label>
+                <select name="deviceType" id="device-type" onchange="UpdateRestrictions()"></select>
+            </div>
+
+            <!--   DISPOSITIU     -->
+            <div class="new-config-section">
+                <label for="device-name">Dispositiu:</label>
+                <select name="device-name" id="device-name" onchange="UpdateAssociatedVariables()"></select>
+            </div>
+
+            <!--   RESTRICCIONS     -->
+            <div class="new-config-section" id="restrictionsContainer"></div>
+
+            <!--   VARIABLES ASSOCIADES     -->
+            <div class="new-config-section" id="vars-config-section"></div>
+
+            <!--   VARIABLES ASSOCIADES     -->
+            <div class="new-config-section" id="control-vars-config-section"></div>
+
+            <div style="margin-top: 20px;">
+                <button class="btn" onclick="SubmitOptimization()"> Guardar </button>
+                <button class="btn secondary" onclick="CloseModal()"> Cancel·lar </button>
+            </div>
+        </div>
+    </div>
+
+
+</body>
+
+<script>
+    const device_types = {{!device_types}};
+    const device_entities = {{!device_entities}};
+
+    function TestOptimization() {
+        fetch('optimize')
+            .then(response => response.text())
+            .then(data => console.log("Optimization pressed"))
+    }
+
+    /**
+     * Funció que es crida en carregar la pàgina.
+     * Genera la gràfica d'optimització i crida la funció per a mostrar les configuracions guardades
+     */
+    function onLoadPage() {
+        const parent_div_scheduler = document.getElementById("scheduler-grid");
+        fetch('get_scheduler_data')
+            .then(response => response.json())
+            .then(data => {
+                if (data !== "ERROR") {
+                    const container = document.createElement("div");
+                    container.className = "scheduler-card";
+                    parent_div_scheduler.appendChild(container);
+
+                    Plotly.newPlot(
+                        container,
+                        data.data,
+                        PlotlyTheme.mergeLayout(data.layout)
+                    );
+                }
+            })
+        LoadConfigsSaved();
+    }
+
+    /**
+     * Obre el formulari per a crear una nova configuració i l'omple dinàmicament.
+     */
+    function NewDeviceConfig() {
+        const modal = document.getElementById('new-optimization-modal');
+        modal.classList.add("opening");
+        modal.classList.remove('hidden');
+
+        const select = document.getElementById('device-type');
+        select.innerHTML = '';
+
+        for (const type in device_types) {
+            const opt = document.createElement('option');
+            opt.value = type;
+            opt.textContent = device_types[type].nom;
+            select.appendChild(opt);
+        }
+        UpdateRestrictions();
+        LoadDevicesEntities();
+    }
+
+    /**
+     * Modifica les restriccions segons el tipus de device seleccionat al formulari
+     */
+    function UpdateRestrictions() {
+        const type = document.getElementById('device-type').value;
+        const restrictions = device_types[type].restriccions;
+        const container = document.getElementById('restrictionsContainer');
+        container.innerHTML = '';
+
+        restrictions.forEach(restriction => {
+            if (typeof restriction === 'object') {
+                container.innerHTML += `
+                <label>${restriction.nom}: </label>
+                <input type="number"
+                        name="${restriction.nom}"
+                        id="${restriction.id}"
+                        min="${restriction.min ?? ''}"
+                        max="${restriction.max ?? ''}"
+                        step="${restriction.step ?? 'any'}" />
+                <br>
+                `;
+            }
+            else {
+                container.innerHTML += `
+                    <label>~${restriction}:</label>
+                    <input type="number" name="${restriction}" step="any"/>
+                    <br>
+                `;
+            }
+        });
+    }
+
+    /**
+     * Crea select i option per als paràmetres entrats
+     */
+    function CreateSelectOption(container, varId, varName, dev, isControllVar) {
+        const label = document.createElement("label");
+        label.for = varId;
+        label.textContent = varName;
+        label.id = varId;
+
+        const select = document.createElement("select");
+        select.innerHTML = '<option value="">-- Selecciona un sensor --</option>';
+        select.name = varId;
+        select.id = varId;
+
+        // if (!device_name || !device_entities[device_name]) return;
+        dev.entities.forEach(ent => {
+
+            if (isControllVar && ent.entity_id.startsWith("sensor.")) return;
+            if (!isControllVar && !ent.entity_id.startsWith("sensor.")) return;
+
+            const opt = document.createElement("option");
+            opt.value = ent.entity_id;
+            opt.textContent = ent.entity_name;
+            select.appendChild(opt);
+        });
+
+        container.appendChild(label);
+        container.appendChild(select);
+    }
+
+    /**
+     * Modifica els inputs per a les variables associades segons el tipus de dispositiu i entitats d'aquest
+     */
+    function UpdateAssociatedVariables() {
+        const device_type = document.getElementById('device-type').value;
+        const device_name = document.getElementById('device-name').value;
+
+        const dev = device_entities.find(d => d.device_name === device_name);
+        if (!dev) return;
+
+        const vars = device_types[device_type]["variables"];
+        const control_vars = device_types[device_type]["variables_control"];
+        const container = document.getElementById('vars-config-section');
+        container.innerHTML = '';
+
+        vars.forEach(variable => {
+            CreateSelectOption(container, variable['id'], variable['nom'], dev, false)
+        })
+        control_vars.forEach(variable => {
+            CreateSelectOption(container, variable['id'], variable['nom'], dev, true)
+        })
+    }
+
+    /**
+     * Retorna totes les variables seleccionades dins el div #vars-config-section.
+     * Busca tots els <select> dins aquest div, i per a cadascun recull
+     * totes les opcions seleccionades (amb id i friendly_name).
+     */
+    function GetSelectedVariables() {
+        const container = document.getElementById("vars-config-section");
+        const allSelects = container.querySelectorAll('select');
+
+        const selectedExtraVars = {}
+        const selectedControlVars = {}
+
+        allSelects.forEach(select => {
+
+            const label = document.getElementById(select.id);
+            const groupLabel = label ? label.textContent.trim() : "Sense nom";
+
+            Array.from(select.selectedOptions).forEach(opt => {
+                if (opt.value.startsWith("sensor.")) {
+                    selectedExtraVars[label.id] = {
+                        "sensor_id": opt.value,
+                        "friendly_name": opt.text,
+                        "label_name": label.textContent,
+                        "function_name": groupLabel
+                    };
+                }
+                else {
+                    selectedControlVars[label.id] = {
+                        "sensor_id": opt.value,
+                        "friendly_name": opt.text,
+                        "label_name": label.textContent,
+                        "function_name": groupLabel
+                    };
+                }
+            })
+        })
+        return [selectedExtraVars, selectedControlVars];
+    }
+
+    /**
+     * Mostra un missatge d'error sota un element concret si aquyest esta buit al moment de guardar.
+     * @param element element html que està buit al moment de guardar
+     * @param message Missatge que es mostrarà sota l'element
+     */
+    function showErroratSubmit(element, message) {
+        element.classList.add('error');
+
+        //Si ja hi ha un missatge d'error, no el dupliquem
+        if (element.nextElementSibling && element.nextElementSibling.classList.contains('error-msg')) {
+            return;
+        }
+
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'error-msg';
+        errorMsg.textContent = message;
+        element.insertAdjacentElement('afterend', errorMsg);
+    }
+
+    /**
+     * Elimina els missatges d'error si l'usuari canvia el valor
+     */
+    document.addEventListener('input', (e) => {
+        if (e.target.classList.contains('error') && e.target.value.trim() !== '') {
+            e.target.classList.remove('error');
+
+            const msg = e.target.nextElementSibling;
+            if (msg.classList.contains('error-msg')) {
+                msg.remove()
+            }
+        }
+    })
+
+    /**
+     * Envia les dades entrades al formulari a Back-end per guardar-les
+     * @async
+     * @returns {Promise<void>}  Si tot ha anat bé recarrega la pàgina amb les configuracions noves.
+     */
+    async function SubmitOptimization() {
+
+        const name = document.getElementById('device-name');
+        const type = document.getElementById('device-type');
+        const restrictionInputs = document.querySelectorAll('#restrictionsContainer input');
+        const varsContainer = document.getElementById('vars-config-section');
+        const all_selects = varsContainer.querySelectorAll('select');
+
+        let valid = true;
+
+        // Netejar errors anteriors
+        document.querySelectorAll('.error-msg').forEach(e => e.remove());
+        document.querySelectorAll('.error').forEach(e => e.classList.remove('error'));
+
+        // Validar camp "Dispositiu"
+        if (name.value.trim() === '') {
+            showErroratSubmit(name, "Selecciona un Dispositiu");
+            valid = false;
+        }
+
+        // Validar camp "Tipus de Dispositiu"
+        if (type.value.trim() === '') {
+            showErroratSubmit(type, "Seleccione el tipus de Dispositiu");
+            valid = false;
+        }
+
+        //Validar restriccions
+        restrictionInputs.forEach(inp => {
+            if (inp.value.trim() === '') {
+                showErroratSubmit(inp, "Aquest camp és obligatori");
+                valid = false;
+            }
+        });
+
+        // validació variables extra
+        all_selects.forEach(select => {
+            if (select.value.trim() === '') {
+                showErroratSubmit(select, "Seleccione una entitat per a aquesta variable");
+                valid = false;
+            }
+        });
+
+        // Si hi ha algun error, eturem l'enviament
+        if (!valid) return;
+
+        // --- Creem l'objecte per enviar ---
+        const device_name = name.value;
+        const device_type = type.value;
+        const [extraVars, controlVars] = GetSelectedVariables();
+        const friendly_type = device_types[device_type].nom;
+        const device_category = device_types[device_type].tipus;
+
+        const restrictions = {};
+        restrictionInputs.forEach(inp => {
+            restrictions[inp.id] = {
+                "name": inp.name,
+                "value": inp.value,
+            };
+        });
+
+
+        const data = {
+            "device_name": device_name,
+            "device_type": device_type,
+            "device_category": device_category,
+            "friendly_name": friendly_type,
+            "restrictions": restrictions,
+            "extra_vars": extraVars,
+            "control_vars": controlVars
+        };
+
+        const res = await fetch('save_optimization_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+        if (result.status === 'ok') {
+            document.getElementById('new-optimization-modal').classList.add('hidden');
+            const parent_config_div = document.getElementById("optimization-graphs-container");
+            parent_config_div.innerHTML = '';
+            await LoadConfigsSaved();
+        }
+        else {
+            console.error(result.status);
+        }
+    }
+
+    /**
+     * Tanca el formulari
+     */
+    function CloseModal() {
+        document.getElementById("new-optimization-modal").classList.add('hidden');
+        document.getElementById("new-optimization-modal").classList.remove('opening');
+    }
+
+    /**
+     * Omple el select amb els dispositius
+     */
+    function LoadDevicesEntities() {
+        const devices = {};
+        device_entities.forEach(item => {
+            const name = item.device_name;
+            devices[name] = item.entities || [];
+        });
+
+        const deviceSelect = document.getElementById('device-name');
+        deviceSelect.innerHTML = '<option value="">-- Selecciona un dispositiu --</option>';
+
+        const sortedDevices = Object.keys(devices).sort((a, b) =>
+            a.localeCompare(b, 'ca', { sensitivity: 'base' }));
+
+        for (const dev of sortedDevices) {
+            const opt = document.createElement('option');
+            opt.value = dev;
+            opt.textContent = dev;
+            deviceSelect.appendChild(opt);
+        }
+    }
+
+    /**
+     * Carrega des del back-end les configuracions guardades
+     * @returns {Promise<void>} Si les obté correctament les mostra a la pàgina.
+     */
+    async function LoadConfigsSaved() {
+        let saved_configs = ""
+        const res = await fetch('get_config_file_names', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await res.json();
+        if (result.status === 'ok') {
+            saved_configs = JSON.parse(JSON.stringify(result.names));
+        }
+        const parent_config_div = document.getElementById("optimization-graphs-container");
+
+        saved_configs.forEach((config_name) => {
+            fetch('get_device_config_data/' + config_name)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        // console.log(data["device_config"].vars[2]);
+                        const dev = data["device_config"];
+
+                        const container = document.createElement('div');
+                        container.className = "device-config-container";
+
+                        // NOM DEL DISPOSITIU
+                        const name = document.createElement('h3');
+                        name.className = "device-config-title";
+                        name.textContent = dev.device_name;
+                        container.appendChild(name);
+
+                        // TIPUS DE DISPOSITIU
+                        const type = document.createElement('span');
+                        type.innerHTML = dev.friendly_name;
+                        type.className = "device-config-type";
+                        container.appendChild(type);
+
+                        // RESTRICCIONS
+                        const restricctions = document.createElement('ul');
+                        restricctions.className = "device-config-ul";
+                        restricctions.innerHTML = ' ';
+                        for (const r in dev.restrictions) {
+                            const restriction = document.createElement('li');
+                            restriction.className = "device-config-li";
+                            restriction.innerHTML = `<b class="device-config-boldText">${dev.restrictions[r].name}: </b> ${dev.restrictions[r].value}`;
+                            // restriction.innerHTML = r + ": " + dev.restrictions[r];
+                            restricctions.appendChild(restriction);
+                        }
+                        container.appendChild(restricctions);
+
+                        // VARIABLES (entitats)
+                        const extra_vars = document.createElement('ul');
+                        extra_vars.className = "device-config-ul"
+                        extra_vars.innerHTML = '';
+                        for (const r in dev.extra_vars) {
+                            const extra_var = document.createElement('li');
+                            extra_var.className = "device-config-li";
+                            extra_var.innerHTML = `<b class="device-config-boldText"> ${dev.extra_vars[r].function_name}: </b> ${dev.extra_vars[r].friendly_name}`;
+                            extra_vars.appendChild(extra_var);
+                        }
+                        for (const r in dev.control_vars) {
+                            const restriction_var = document.createElement('li');
+                            restriction_var.className = "device-config-li";
+                            restriction_var.innerHTML = `<b class="device-config-boldText"> ${dev.control_vars[r].function_name}: </b> ${dev.control_vars[r].friendly_name}`;
+                            extra_vars.appendChild(restriction_var);
+                        }
+                        container.appendChild(extra_vars);
+
+                        // BOTÓ ELIMINAR
+                        const delete_button = document.createElement('button');
+                        delete_button.className = "btn secondary";
+                        delete_button.innerHTML = 'Eliminar Configuració';
+                        delete_button.onclick = async () => {
+                            const res = await fetch('delete_optimization_config/' + config_name, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
+
+                            const result = await res.json();
+                            if (result.status === 'ok') {
+                                parent_config_div.innerHTML = '';
+                                await LoadConfigsSaved();
+                            } else {
+                                console.error(result.status);
+                            }
+                        }
+                        container.appendChild(delete_button);
+
+                        parent_config_div.appendChild(container);
+                    }
+
+                })
+        })
+
+    }
+
+    function ChangeOptimizationStatus() {
+        console.log("ChangeOptimizationStatus");
+        //TODO: encendre o apagar l'optimització automàtica del dispositiu.
+    }
+
+    onLoadPage();
+</script>
+
+</html>
