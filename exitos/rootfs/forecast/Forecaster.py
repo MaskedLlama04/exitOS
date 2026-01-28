@@ -700,6 +700,7 @@ class Forecaster:
     def forecast(self, data, y, model, future_steps=48):
         """
         Realitza prediccions de forma RECURSIVA per permetre l'ús de lags recents (1..24h).
+        Utilitza totes les dades per fer els càlculs, però només retorna les últimes 2 setmanes + previsió.
         """
 
         # PAS 1 - Obtenir els valors del model
@@ -709,7 +710,7 @@ class Forecaster:
         extra_vars = self.db.get('extra_vars', {})
         look_back = self.db.get('look_back', {-1: [1, 24]})
         
-        # Preparem l'històric inicial
+        # Preparem l'històric inicial (TOTES LES DADES)
         history_df = data.copy()
         if 'timestamp' in history_df.columns:
             history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.tz_localize(None)
@@ -796,7 +797,7 @@ class Forecaster:
             columns=[y]
         )
         
-        # Recalculem el passat en mode batch per al gràfic 'fit'
+        # Recalculem el passat en mode batch per al gràfic 'fit' (USANT TOTES LES DADES)
         df_fit = self.do_windowing(data, look_back)
         df_fit = self.timestamp_to_attrs(df_fit, extra_vars)
         if colinearity_remove_level_to_drop:
@@ -818,9 +819,15 @@ class Forecaster:
              
         out = pd.DataFrame(model.predict(df_fit), index=real_values_column.index, columns=[y])
         
-        final_prediction = pd.concat([out, forecast_output])
+        # FILTRATGE: Només retornem les últimes 14 dies (336 hores) de dades històriques
+        cutoff_date = out.index[-1] - pd.Timedelta(days=14)
+        out_filtered = out[out.index >= cutoff_date]
+        real_values_filtered = real_values_column[real_values_column.index >= cutoff_date]
         
-        return final_prediction, real_values_column,  self.db['sensors_id']
+        # Combinem les prediccions filtrades amb el forecast futur
+        final_prediction = pd.concat([out_filtered, forecast_output])
+        
+        return final_prediction, real_values_filtered, self.db['sensors_id']
 
     def save_model(self, model_filename):
         """
