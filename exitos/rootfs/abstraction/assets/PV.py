@@ -3,6 +3,7 @@ import logging
 logger = logging.getLogger("exitOS")
 
 class PV:
+    # Inicialitzacio
     def __init__(self, hourly_radiation):
         self.max_output = 2500
         self.min_output = 0
@@ -13,7 +14,7 @@ class PV:
         self.superficie_total = self.numero_plaques * self.superficie_placa
 
 
-
+    # Generacio horaria
     def get_generacio_horaria(self, hourly_radiation):
         generacio_horaria_total = []
         for hour in hourly_radiation:
