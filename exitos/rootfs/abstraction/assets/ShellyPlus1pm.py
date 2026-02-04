@@ -10,16 +10,22 @@ logger = logging.getLogger("exitOS")
 @register_device("ShellyPlus1pm")
 class ShellyPlus1pm(AbsConsumer):
 
+    # Inicialitzacio
     def __init__(self,config, database):
+        # Inicialitza la classe base
         super().__init__(config)
+        # Inicialitza la base de dades
         self.database = database
+        # Inicialitza el valor actual
         self.is_on = None #??
         self.min = 0
         self.max = 1
-
+        # Obte el nom del sensor
         self.sensor_name = config["extra_vars"]["consum_interruptor"]["sensor_id"]
+        # Obte el consum quan està encés
         self.consumption = self.get_consumption_when_ON(database.get_data_from_sensor(self.sensor_name))
 
+    # Simulacio
     def simula(self, config, horizon, horizon_min):
         total_cost = 0
         self.horizon = horizon
@@ -30,16 +36,18 @@ class ShellyPlus1pm(AbsConsumer):
             start_point = hour * self.horizon_min
             for minute in range(self.horizon_min):
                 current_min_location = start_point + minute
-
+                # Si la configuracio es 0, no hi ha consum
                 if config[current_min_location] == 0:
                     consumption_hourly.append(0)
                     cost = 0
+                # Si la configuracio es 1, hi ha consum
                 elif config[current_min_location] == 1:
                     consumption_hourly.append(self.consumption)
                     cost = self.consumption
-
+                # Suma el cost
                 total_cost += cost
 
+        # Retorna el perfil de consum, el cost total i la configuracio
         return_dict = {
             "consumption_profile": consumption_hourly,
             "total_cost": total_cost,
@@ -47,13 +55,17 @@ class ShellyPlus1pm(AbsConsumer):
         }
         return return_dict
 
+    # Control
     def controla(self, config,current_hour):
+        # Calcula la posicio actual
         current_pos = self.vbound_start + current_hour
+        # Loggeja la configuracio actual
         logger.info(f"     ▫️ Configurant {self.name} -> {config[current_pos]}")
-
+        # Obte el valor actual del sensor
         current_state = self.database.get_current_sensor_state(self.sensor_name)
+        # Si no hi ha cap valor, retorna None
         if current_state is None: return None
-
+        # Si el valor actual no es el mateix que el de la configuracio, retorna la configuracio
         if current_state[0] != config[current_pos]:
             return config[current_pos], self.sensor_name, "switch"
 
@@ -66,6 +78,7 @@ class ShellyPlus1pm(AbsConsumer):
 
         counter = 0
         aggregated = 0
+        # Busca els valors més alts i mitja
         for val in range(len(data['value'])):
             if counter >= 500: continue
             if data['value'][val] > treshold:
