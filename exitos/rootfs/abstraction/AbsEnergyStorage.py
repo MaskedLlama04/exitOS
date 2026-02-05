@@ -1,11 +1,11 @@
-# Class that is the parent for all different energy sources
+# Class that is the parent for all different energy storage devices
 from abstraction.AbsDevice import AbsDevice
 from abc import abstractmethod
 
 
 class AbsEnergyStorage(AbsDevice):
     """
-    Class that is the parent for all different energy sources
+    Class that is the parent for all different energy storage devices
     """
 
     def __init__(self, config):

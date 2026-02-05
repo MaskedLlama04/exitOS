@@ -41,5 +41,4 @@ def create_device_from_config(config,database):
     if not cls:
         logger.error(f"❌ Device {device_type} is not registered")
 
-
     return cls(config, database)
