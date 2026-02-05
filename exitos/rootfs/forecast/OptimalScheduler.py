@@ -14,6 +14,8 @@ from scipy.optimize import differential_evolution, Bounds
 
 from abstraction.AbsEnergyStorage import AbsEnergyStorage
 from abstraction.DeviceRegistry import DEVICE_REGISTRY, create_device_from_config
+from forecast.GeneticOptimizer import GeneticOptimizer, GeneticAlgorithmConfig, UniversalObjectiveFunction
+
 
 
 logger = logging.getLogger("exitOS")
@@ -56,7 +58,7 @@ class OptimalScheduler:
         self.electricity_prices = []
 
 
-    def start_optimization(self, consumer_id, generator_id, horizon, horizon_min):
+    def start_optimization(self, consumer_id, generator_id, horizon, horizon_min, use_genetic_algorithm=True):
         try:
             self.horizon = horizon
             self.horizon_min = horizon_min
@@ -74,7 +76,7 @@ class OptimalScheduler:
 
                 self.electricity_prices = self.get_hourly_electric_prices()
 
-                result, cost = self.__optimize()
+                result, cost = self.__optimize(use_genetic_algorithm=use_genetic_algorithm)
                 total_balance = self.__calc_total_balance(config = result, total = False)
                 all_devices_config = self.get_hourly_config_for_device(result)
             else:
@@ -88,6 +90,7 @@ class OptimalScheduler:
         except Exception as e:
             logger.error(f"❌ No s'ha pogut realitzar l'optimització: {e}")
             return False, None, None, None
+
 
 
     def prepare_data_for_optimization(self):
@@ -184,35 +187,73 @@ class OptimalScheduler:
         bounds = Bounds(lb, ub, True)
         return bounds
 
-    def __optimize(self):
-        logger.info(f"🦖 - Començant optimització  a les {datetime.now().strftime('%Y-%m-%d %H:00')}")
+    def __optimize(self, use_genetic_algorithm=True):
+        if use_genetic_algorithm:
+            logger.info(f"🦖 - Començant optimització amb Algorisme Genètic a les {datetime.now().strftime('%Y-%m-%d %H:00')}")
+            
+            # Crear funció objectiu universal
+            objective_function = UniversalObjectiveFunction(
+                consumers=self.consumers,
+                generators=self.generators,
+                energy_storages=self.energy_storages,
+                electricity_prices=self.electricity_prices,
+                global_consumer_forecast=self.global_consumer_forecast,
+                global_generator_forecast=self.global_generator_forecast,
+                horizon=self.horizon,
+                horizon_min=self.horizon_min
+            )
+            
+            # Configurar algorisme genètic
+            ga_config = GeneticAlgorithmConfig(
+                population_size=150,
+                max_generations=self.maxiter,
+                mutation_rate=0.2,
+                crossover_rate=0.7,
+                elite_size=10,
+                tournament_size=5,
+                convergence_threshold=0.0001
+            )
+            
+            optimizer = GeneticOptimizer(config=ga_config)
+            
+            # Convertir Bounds a llista de tuples
+            bounds_list = [(self.varbound.lb[i], self.varbound.ub[i]) for i in range(len(self.varbound.lb))]
+            
+            # Executar optimització
+            result = optimizer.optimize(
+                bounds=bounds_list,
+                objective_function=objective_function,
+                integrality=[1] * len(self.varbound.lb),
+                callback=self.__update_GA_step
+            )
+            
+        else:
+            logger.info(f"🦖 - Començant optimització amb Differential Evolution a les {datetime.now().strftime('%Y-%m-%d %H:00')}")
+            
+            result = differential_evolution(func = self.cost_DE,
+                                            popsize = 150,
+                                            bounds = self.varbound,
+                                            integrality = [1] * len(self.varbound.lb),
+                                            maxiter = self.maxiter,
+                                            mutation = (0.15, 0.25),
+                                            recombination = 0.7,
+                                            tol = 0.0001,
+                                            strategy = 'best1bin',
+                                            init = 'halton',
+                                            disp = True,
+                                            updating = 'deferred',
+                                            callback = self.__update_DE_step,
+                                            workers = 1
+                                            )
 
-        result = differential_evolution(func = self.cost_DE,
-                                        popsize = 150,
-                                        bounds = self.varbound,
-                                        integrality = [1] * len(self.varbound.lb),
-                                        maxiter = self.maxiter,
-                                        mutation = (0.15, 0.25),
-                                        recombination = 0.7,
-                                        tol = 0.0001,
-                                        strategy = 'best1bin',
-                                        init = 'halton',
-                                        disp = True,
-                                        updating = 'deferred',
-                                        callback = self.__update_DE_step,
-                                        workers = 1
-                                        )
-
-
-        # if not self.database.running_in_ha:
         logger.warning(" OPTIMIZE FINALITZAT")
         logger.debug(f"     ▫️ Status: {result['message']}")
         logger.debug(f"     ▫️ Total evaluations: {result['nfev']}")
         logger.debug(f"     ▫️ Solution: {result['x']}")
         logger.debug(f"     ▫️ Cost: {result['fun']}")
 
-
         return result['x'].copy(), result['fun']
+
 
     def cost_DE(self, config):
         return self.__calc_total_balance(config)
@@ -221,6 +262,19 @@ class OptimalScheduler:
         logger.info(f"◽ New Step")
         logger.debug(f"      ▫️ Convergence {convergence}")
         logger.debug(f"      ▫️ Bounds {bounds}")
+
+        logger.debug(f"      ▫️ Current price {self.current_result}")
+        logger.debug(f"      ▫️ Best price {self.best_result}")
+
+        if self.current_result < self.best_result:
+            logger.debug(f"      ▫️ Updated Best result: {self.best_result} -> {self.current_result}")
+            self.best_result = self.current_result
+            self.best_result_balance = self.current_result_balance
+
+    def __update_GA_step(self, bounds, convergence):
+        """Callback per a l'algorisme genètic"""
+        logger.info(f"◽ New Generation")
+        logger.debug(f"      ▫️ Convergence {convergence}")
 
         logger.debug(f"      ▫️ Current price {self.current_result}")
         logger.debug(f"      ▫️ Best price {self.best_result}")
