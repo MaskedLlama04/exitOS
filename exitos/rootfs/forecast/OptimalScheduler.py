@@ -95,8 +95,8 @@ class OptimalScheduler:
 
     def prepare_data_for_optimization(self):
         """
-
-        :return:
+        Prepara les dades per a l'optimització.
+        :return: True si s'han pogut preparar les dades, False altrament.
         """
 
         configs_saved = [os.path.basename(f) for f in glob.glob(self.base_filepath + "optimizations/configs/*.json")]
@@ -157,12 +157,13 @@ class OptimalScheduler:
 
     def configure_varbounds(self):
         """
-        Configura varbounds
-        :return:
+        Configura varbounds i integrality per a cada dispositiu.
+        :return: Tuple (bounds, integrality_list)
         """
 
         lb = []
         ub = []
+        integrality_list = []
         index = 0
         num_steps = self.horizon * self.horizon_min
 
@@ -173,18 +174,32 @@ class OptimalScheduler:
             self.energy_storages.values()
         ]
 
-        # CONSUMERS
+        # CONSUMERS, GENERATORS, ENERGY STORAGES
         for collection in collections:
             for item in collection:
                 item.vbound_start = index
 
                 lb.extend([item.min] * num_steps)
                 ub.extend([item.max] * num_steps)
+                
+                # Determinar si el dispositiu necessita variables enteres o contínues
+                # Per defecte, assumim que són enteres (0/1 per a interruptors)
+                # però alguns dispositius com CarCharger necessiten valors continus
+                device_type = type(item).__name__
+                
+                if device_type in ['CarCharger', 'SonnenBattery']:
+                    # Variables contínues per a potència/càrrega
+                    integrality_list.extend([0] * num_steps)
+                else:
+                    # Variables enteres per a dispositius binaris (on/off)
+                    integrality_list.extend([1] * num_steps)
+                
                 index += num_steps
 
                 item.vbound_end = index - 1
 
         bounds = Bounds(lb, ub, True)
+        self.integrality = integrality_list  # Store integrality list
         return bounds
 
     def __optimize(self, use_genetic_algorithm=True):
@@ -223,7 +238,7 @@ class OptimalScheduler:
             result = optimizer.optimize(
                 bounds=bounds_list,
                 objective_function=objective_function,
-                integrality=[1] * len(self.varbound.lb),
+                integrality=self.integrality,  # Use integrality from configure_varbounds
                 callback=self.__update_GA_step
             )
             

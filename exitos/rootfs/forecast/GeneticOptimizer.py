@@ -313,6 +313,7 @@ class UniversalObjectiveFunction:
 
         self.current_cost = 0
         self.current_balance = None
+        self.current_penalty_cost = 0  # Track penalty costs from devices
 
     def __call__(self, config: np.ndarray) -> float:
         """
@@ -322,10 +323,16 @@ class UniversalObjectiveFunction:
             config: Vector de configuració per a tots els dispositius
             
         Returns:
-            Cost total (a minimitzar)
+            Cost total (a minimitzar) = cost electricitat + penalitzacions
         """
+        # Reset penalty cost for this evaluation
+        self.current_penalty_cost = 0
+        
         total_balance = self._calculate_total_balance(config)
-        total_cost = self._calculate_total_cost(total_balance)
+        electricity_cost = self._calculate_electricity_cost(total_balance)
+        
+        # Total cost includes both electricity and penalty costs
+        total_cost = electricity_cost + self.current_penalty_cost
 
         self.current_cost = total_cost
         self.current_balance = total_balance
@@ -367,6 +374,7 @@ class UniversalObjectiveFunction:
     def _calculate_consumer_balance(self, config: np.ndarray) -> List[float]:
         """
         Calcula el consum total de tots els consumidors controlables.
+        També acumula les penalitzacions dels dispositius.
         
         Args:
             config: Vector de configuració
@@ -385,14 +393,19 @@ class UniversalObjectiveFunction:
             result = consumer.simula(config[start:end + 1].copy(), self.horizon, self.horizon_min)
 
             # Sumar el perfil de consum
-            for hour in range(len(result['consumption_profile'])):
+            for hour in range(min(len(result['consumption_profile']), num_intervals)):
                 total_consumption[hour] += result['consumption_profile'][hour]
+            
+            # Acumular penalitzacions del dispositiu
+            if 'total_cost' in result:
+                self.current_penalty_cost += result['total_cost']
 
         return total_consumption
 
     def _calculate_generator_balance(self, config: np.ndarray) -> List[float]:
         """
         Calcula la generació total de tots els generadors controlables.
+        També acumula les penalitzacions dels dispositius.
         
         Args:
             config: Vector de configuració
@@ -411,8 +424,12 @@ class UniversalObjectiveFunction:
             result = generator.simula(config[start:end + 1].copy(), self.horizon, self.horizon_min)
 
             # Sumar el perfil de generació
-            for hour in range(len(result['consumption_profile'])):
+            for hour in range(min(len(result['consumption_profile']), num_intervals)):
                 total_generation[hour] += result['consumption_profile'][hour]
+            
+            # Acumular penalitzacions del dispositiu
+            if 'total_cost' in result:
+                self.current_penalty_cost += result['total_cost']
 
         return total_generation
 
@@ -423,6 +440,7 @@ class UniversalObjectiveFunction:
     ) -> List[float]:
         """
         Aplica l'efecte dels sistemes d'emmagatzematge d'energia al balanç total.
+        També acumula les penalitzacions dels dispositius.
         
         Args:
             config: Vector de configuració
@@ -432,6 +450,7 @@ class UniversalObjectiveFunction:
             Balanç energètic actualitzat amb l'emmagatzematge
         """
         updated_balance = list(total_balance)
+        num_intervals = len(total_balance)
 
         for energy_storage in self.energy_storages.values():
             start = energy_storage.vbound_start
@@ -441,25 +460,32 @@ class UniversalObjectiveFunction:
             result = energy_storage.simula(config[start:end + 1], self.horizon, self.horizon_min)
 
             # Afegir el perfil de consum/descàrrega de la bateria
-            for hour in range(len(result['consumption_profile'])):
+            for hour in range(min(len(result['consumption_profile']), num_intervals)):
                 updated_balance[hour] += result['consumption_profile'][hour]
+            
+            # Acumular penalitzacions del dispositiu
+            if 'total_cost' in result:
+                self.current_penalty_cost += result['total_cost']
 
         return updated_balance
 
-    def _calculate_total_cost(self, total_balance: List[float]) -> float:
+    def _calculate_electricity_cost(self, total_balance: List[float]) -> float:
         """
-        Calcula el cost econòmic total basant-se en el balanç energètic i els preus.
+        Calcula el cost econòmic de l'electricitat basant-se en el balanç energètic i els preus.
+        Nota: Aquest mètode només calcula el cost de l'electricitat, no les penalitzacions.
         
         Args:
-            total_balance: Balanç energètic per cada interval
+            total_balance: Balanç energètic per cada interval (en W)
             
         Returns:
-            Cost total en unitats monetàries
+            Cost de l'electricitat en unitats monetàries
         """
-        total_cost = 0.0
+        electricity_cost = 0.0
 
         for hour in range(len(total_balance)):
-            # Cost = Balanç * Preu (dividit per 1000 per convertir de W a kW)
-            total_cost += total_balance[hour] * (self.electricity_prices[hour] / 1000)
+            # Cost = Balanç (W) * Preu (€/kWh) / 1000 (conversió W -> kW)
+            # Balanç positiu = comprar electricitat (cost)
+            # Balanç negatiu = vendre electricitat (ingrés)
+            electricity_cost += total_balance[hour] * (self.electricity_prices[hour] / 1000)
 
-        return total_cost
+        return electricity_cost
