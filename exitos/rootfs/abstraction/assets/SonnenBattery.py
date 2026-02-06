@@ -17,18 +17,21 @@ class SonnenBattery(AbsEnergyStorage):
         efficiency_data = database.get_latest_data_from_sensor(config["extra_vars"]["eficiencia"]["sensor_id"])
         percentage_data = database.get_latest_data_from_sensor(config["extra_vars"]["percentatge_actual"]["sensor_id"])
         
-        # Validate sensor data
-        if efficiency_data is None or efficiency_data[1] is None:
-            logger.warning(f"⚠️ Eficiència no disponible per a {self.name}, utilitzant valor per defecte 0.95")
+        # Validate sensor data (check for None or zero/invalid values)
+        if efficiency_data is None or efficiency_data[1] is None or float(efficiency_data[1]) <= 0:
+            logger.warning(f"⚠️ Eficiència no disponible o invàlida per a {self.name} (valor: {efficiency_data[1] if efficiency_data else 'None'}), utilitzant valor per defecte 0.95")
             self.efficiency = 0.95
         else:
             self.efficiency = float(efficiency_data[1])
         
-        if percentage_data is None or percentage_data[1] is None:
-            logger.warning(f"⚠️ Percentatge actual no disponible per a {self.name}, utilitzant valor per defecte 50%")
+        if percentage_data is None or percentage_data[1] is None or float(percentage_data[1]) < 0:
+            logger.warning(f"⚠️ Percentatge actual no disponible o invàlid per a {self.name} (valor: {percentage_data[1] if percentage_data else 'None'}), utilitzant valor per defecte 50%")
             self.actual_percentage = 0.5
         else:
-            self.actual_percentage = float(percentage_data[1])
+            # Convert percentage to decimal (0-1 range)
+            value = float(percentage_data[1])
+            # If value is > 1, assume it's in percentage format (0-100)
+            self.actual_percentage = value / 100.0 if value > 1 else value
         
         logger.info(f"   ▫️ {self.name}: efficiency={self.efficiency}, actual_percentage={self.actual_percentage}")
 
