@@ -72,9 +72,21 @@ class OptimalScheduler:
                 self.global_consumer_forecast['forecast_data'], self.global_consumer_forecast['forecast_timestamps'] = self.get_sensor_forecast_data(consumer_id)
                 self.global_generator_forecast['forecast_data'], self.global_generator_forecast['forecast_timestamps'] = self.get_sensor_forecast_data(generator_id)
 
+                # Validar que les previsions són llistes vàlides
+                if not isinstance(self.global_consumer_forecast['forecast_data'], list):
+                    raise ValueError(f"Les dades de previsió del consumidor no són una llista vàlida: {type(self.global_consumer_forecast['forecast_data'])}")
+                if not isinstance(self.global_generator_forecast['forecast_data'], list):
+                    raise ValueError(f"Les dades de previsió del generador no són una llista vàlida: {type(self.global_generator_forecast['forecast_data'])}")
+
                 self.varbound = self.configure_varbounds()
 
                 self.electricity_prices = self.get_hourly_electric_prices()
+                
+                # Validar que els preus són una llista vàlida
+                if not isinstance(self.electricity_prices, list):
+                    raise ValueError(f"Els preus de l'electricitat no s'han pogut obtenir correctament. Verifica la connexió a OMIE.")
+                if len(self.electricity_prices) == 0:
+                    raise ValueError("La llista de preus de l'electricitat està buida.")
 
                 result, cost = self.__optimize(use_genetic_algorithm=use_genetic_algorithm)
                 total_balance = self.__calc_total_balance(config = result, total = False)
@@ -149,9 +161,15 @@ class OptimalScheduler:
         for hour in hours:
             if hour in sensor_forecast['timestamp'].values:
                 row = sensor_forecast[sensor_forecast['timestamp'] == hour]
-                sensor_data.append(row['value'].values[0])
+                value = row['value'].values[0]
+                # Validar que el valor és numèric
+                try:
+                    sensor_data.append(float(value))
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️ Valor no numèric trobat per a {sensor_id} a {hour}: {value}. S'utilitzarà 0.")
+                    sensor_data.append(0.0)
             else:
-                sensor_data.append(0)
+                sensor_data.append(0.0)
 
         return sensor_data, self.timestamps
 
@@ -360,11 +378,16 @@ class OptimalScheduler:
     def get_hourly_electric_prices(self,):
         today = datetime.today().strftime('%Y%m%d')
         url = f"https://www.omie.es/es/file-download?parents%5B0%5D=marginalpdbc&filename=marginalpdbc_{today}.1"
-        response = requests.get(url)
+        
+        try:
+            response = requests.get(url, timeout=10)
+        except Exception as e:
+            logger.error(f"❌ Error de connexió amb OMIE: {e}")
+            raise ValueError(f"No s'ha pogut connectar amb OMIE per obtenir els preus de l'electricitat: {e}")
 
         if response.status_code != 200:
             logger.error(f"❌ No s'ha pogut obtenir el preu de la llum de OMIE: {response.status_code}.")
-            return -1
+            raise ValueError(f"OMIE ha retornat un error {response.status_code}. No es pot continuar amb l'optimització.")
 
         with open('omie_price_pred.csv', "wb") as file:
             file.write(response.content)
