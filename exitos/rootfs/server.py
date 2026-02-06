@@ -206,127 +206,55 @@ def get_scheduler_data():
 
         graph_timestamps = optimization_db['timestamps']
         graph_optimization = optimization_db['total_balance']
-        graph_prices = optimization_db.get('total_price', [])
-        graph_generation = optimization_db.get('global_generation', [])
 
-        
-        # Prepare data dictionary
-        data = {
+
+        graph_df = pd.DataFrame({
             "hora": pd.to_datetime(graph_timestamps),
-            "optimitzacio": graph_optimization
-        }
-        
-        # Add generation if available
-        if graph_generation and len(graph_generation) == len(graph_timestamps):
-            data["generacio"] = graph_generation
-            
-        # Add prices and calculate cost if available
-        if graph_prices and len(graph_prices) == len(graph_timestamps):
-            data["preu"] = [p * 1000 for p in graph_prices] # €/MWh
-            # Cost Horari: Balance (kW) * Price (€/kWh)
-            data["cost_horari"] = [bal * p for bal, p in zip(graph_optimization, graph_prices)]
-
-        graph_df = pd.DataFrame(data)
+            "optimitzacio": graph_optimization,
+            # "consum": graph_consum,
+            # "generacio": graph_generation
+        })
         graph_df['hora_str'] = graph_df['hora'].dt.strftime('%H:%M')
 
         fig = go.Figure()
 
-        # 1. Gràfic de Balanç (Optimització)
+        # Línia principal (verd amb fill)
         fig.add_trace(go.Scatter(
             x=graph_df["hora"],
             y=graph_df["optimitzacio"],
             mode='lines',
-            name="Balanç Net (kW)",
-            line=dict(color="#2ecc71", width=3),
+            name="Optimització",
+            line=dict(color="green", width=2),
             fill='tozeroy',
-            fillcolor="rgba(46, 204, 113, 0.2)",
-            yaxis="y1"
+            fillcolor="rgba(0,128,0,0.3)"
         ))
-        
-        # 2. Gràfic de Generació PV
-        if "generacio" in graph_df.columns:
-             fig.add_trace(go.Scatter(
-                x=graph_df["hora"],
-                y=graph_df["generacio"],
-                mode='lines',
-                name="Generació Solar (kW)",
-                line=dict(color="#f1c40f", width=2),
-                fill='tozeroy',
-                fillcolor="rgba(241, 196, 15, 0.1)",
-                yaxis="y1"
-            ))
-
-        # 3. Gràfic de Cost Horari
-        if "cost_horari" in graph_df.columns:
-            fig.add_trace(go.Bar(
-                x=graph_df["hora"],
-                y=graph_df["cost_horari"],
-                name="Cost Estimat (€)",
-                marker_color="#9b59b6",
-                opacity=0.3,
-                yaxis="y2"
-            ))
-
-        # 4. Gràfic de Preus
-        if "preu" in graph_df.columns:
-            fig.add_trace(go.Scatter(
-                x=graph_df["hora"],
-                y=graph_df["preu"],
-                mode='lines+markers',
-                name="Preu Llum (€/MWh)",
-                line=dict(color="#e74c3c", width=2, dash='dot'),
-                marker=dict(size=4),
-                yaxis="y2",
-                visible='legendonly'
-            ))
 
         now = datetime.now()
 
-        # Layout amb doble eix Y
         fig.update_layout(
-            title="Optimització: Energia, Costos i Generació",
-            height=500,
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=400,
+            yaxis=dict(zeroline=False),
             xaxis=dict(
                 tickmode='array',
                 tickvals=graph_timestamps,
                 ticktext=graph_df['hora_str'],
                 tickangle=-45,
-                tickfont=dict(size=12),
-                title="Hores",
-                gridcolor='rgba(128, 128, 128, 0.2)'
+                tickfont=dict(size=13),
+                title="Hores"
             ),
-            # Eix Y1: Potencia (kW)
-            yaxis=dict(
-                title="Potència (kW)",
-                titlefont=dict(color="#2ecc71"),
-                tickfont=dict(color="#2ecc71"),
-                zeroline=True,
-                zerolinecolor='rgba(0,0,0,0.5)'
-            ),
-            # Eix Y2: Cost/Preu (€)
-            yaxis2=dict(
-                title="Cost / Preu (€)",
-                titlefont=dict(color="#9b59b6"),
-                tickfont=dict(color="#9b59b6"),
-                overlaying="y",
-                side="right",
-                showgrid=False
-            ),
+            yaxis_title="Consum (W)",
             shapes=[
                 dict(
                     type="line",
-                    x0=now, x1=now, y0=0, y1=1, xref="x", yref="paper",
-                    line=dict(color="orange", width=2, dash="dash")
+                    x0=now,
+                    x1=now,
+                    y0=0,
+                    y1=1,
+                    xref="x",
+                    yref="paper",
+                    line=dict(color="red", width=2, dash="dash")
                 )
             ],
-            annotations=[
-                 dict(x=now, y=0, xref="x", yref="paper", text="Ara", showarrow=False, font=dict(color="orange"), yshift=10)
-            ],
-            margin=dict(l=10, r=10, t=10, b=10),
-            plot_bgcolor='white'
-        )
             annotations=[
                 dict(
                     x=now,
