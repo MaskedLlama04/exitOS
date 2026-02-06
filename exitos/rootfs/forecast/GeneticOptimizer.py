@@ -253,10 +253,12 @@ class GeneticOptimizer:
                     mutated[i] = np.random.randint(int(lower), int(upper) + 1)
                 else:
                     # Mutació gaussiana per a variables contínues
-                    sigma = (upper - lower) * 0.1  # 10% del rang
+                    sigma = abs(upper - lower) * 0.1  # 10% del rang
                     mutated[i] = individual[i] + np.random.normal(0, sigma)
-                    # Assegurar que està dins dels límits
-                    mutated[i] = np.clip(mutated[i], lower, upper)
+                    # Assegurar que està dins dels límits (ordenant limits per si de cas)
+                    real_lower = min(lower, upper)
+                    real_upper = max(lower, upper)
+                    mutated[i] = np.clip(mutated[i], real_lower, real_upper)
 
         return mutated
 
