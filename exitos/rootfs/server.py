@@ -994,8 +994,15 @@ def get_device_config_data(file_name):
         return {"status": "ok", "device_config": device_config}
     optimization_db = joblib.load(device_config_path)
     fixed_name = file_name.removesuffix(".json")
-    device_config['hourly_config'] = optimization_db['devices_config'][fixed_name].tolist()
-    device_config['timestamps'] = pd.to_datetime(optimization_db['timestamps']).strftime('%Hh').tolist()
+    
+    try:
+        if fixed_name in optimization_db['devices_config']:
+            device_config['hourly_config'] = optimization_db['devices_config'][fixed_name].tolist()
+            device_config['timestamps'] = pd.to_datetime(optimization_db['timestamps']).strftime('%Hh').tolist()
+        else:
+            logger.warning(f"⚠️ Device {fixed_name} not found in optimization results.")
+    except Exception as e:
+         logger.warning(f"⚠️ Error retrieving optimization results for {fixed_name}: {e}")
 
     return {"status": "ok", "device_config": device_config}
 
