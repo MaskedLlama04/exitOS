@@ -206,120 +206,43 @@ def get_scheduler_data():
 
         graph_timestamps = optimization_db['timestamps']
         graph_optimization = optimization_db['total_balance']
-        graph_prices = optimization_db.get('total_price', [])
-        graph_generation = optimization_db.get('global_generation', [])
-        
-        # Prepare data dictionary
-        data = {
-            "hora": pd.to_datetime(graph_timestamps),
-            "optimitzacio": graph_optimization
-        }
-        
-        # Add generation if available
-        if graph_generation and len(graph_generation) == len(graph_timestamps):
-            data["generacio"] = graph_generation
-            
-        # Add prices and calculate cost if available
-        if graph_prices and len(graph_prices) == len(graph_timestamps):
-            data["preu"] = [p * 1000 for p in graph_prices] # €/MWh to ensure visibility or keep scaling appropriate
-            # Calculate Hourly Cost (€) = Balance (kW) * Price (€/kWh) * 1h
-            # Balance > 0 is consumption (cost), Balance < 0 is export (profit)
-            data["cost_horari"] = [bal * p for bal, p in zip(graph_optimization, graph_prices)]
 
-        graph_df = pd.DataFrame(data)
+
+        graph_df = pd.DataFrame({
+            "hora": pd.to_datetime(graph_timestamps),
+            "optimitzacio": graph_optimization,
+            # "consum": graph_consum,
+            # "generacio": graph_generation
+        })
         graph_df['hora_str'] = graph_df['hora'].dt.strftime('%H:%M')
 
         fig = go.Figure()
 
-        # 1. Gràfic de Balanç (Optimització) - Eix Y principal
+        # Línia principal (verd amb fill)
         fig.add_trace(go.Scatter(
             x=graph_df["hora"],
             y=graph_df["optimitzacio"],
             mode='lines',
-            name="Balanç Net (kW)",
-            line=dict(color="#2ecc71", width=3), # Verd maragda
+            name="Optimització",
+            line=dict(color="green", width=2),
             fill='tozeroy',
-            fillcolor="rgba(46, 204, 113, 0.2)",
-            stackgroup='one' # Stacked if desired, but net balance is usually standalone
+            fillcolor="rgba(0,128,0,0.3)"
         ))
-        
-        # 2. Gràfic de Generació PV - Eix Y principal
-        if "generacio" in graph_df.columns:
-             fig.add_trace(go.Scatter(
-                x=graph_df["hora"],
-                y=graph_df["generacio"],
-                mode='lines',
-                name="Generació Solar (kW)",
-                line=dict(color="#f1c40f", width=2, dash='solid'), # Groc
-                fill='tozeroy',
-                fillcolor="rgba(241, 196, 15, 0.1)"
-            ))
-
-        # 3. Gràfic de Cost Horari - Eix Y secundari (Barres)
-        if "cost_horari" in graph_df.columns:
-            fig.add_trace(go.Bar(
-                x=graph_df["hora"],
-                y=graph_df["cost_horari"],
-                name="Cost Estimat (€)",
-                marker_color="#9b59b6", # Morat
-                opacity=0.3,
-                yaxis="y2"
-            ))
-
-        # 4. Gràfic de Preus - Eix Y secundari (Línia)
-        if "preu" in graph_df.columns:
-            fig.add_trace(go.Scatter(
-                x=graph_df["hora"],
-                y=graph_df["preu"],
-                mode='lines+markers',
-                name="Preu Llum (€/MWh)", # Assuming conversion *1000
-                line=dict(color="#e74c3c", width=2, dash='dot'), # Vermell
-                marker=dict(size=4),
-                yaxis="y2",
-                visible='legendonly' # Hide by default to avoid clutter, user can toggle
-            ))
 
         now = datetime.now()
 
-        # Layout amb doble eix Y
         fig.update_layout(
-            title="Optimització: Energia, Costos i Generació",
-            height=500,
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
+            height=400,
+            yaxis=dict(zeroline=False),
             xaxis=dict(
                 tickmode='array',
                 tickvals=graph_timestamps,
                 ticktext=graph_df['hora_str'],
                 tickangle=-45,
-                tickfont=dict(size=12),
-                title="Hores",
-                gridcolor='rgba(128, 128, 128, 0.2)'
+                tickfont=dict(size=13),
+                title="Hores"
             ),
-            # Eix Y1: Potencia (kW)
-            yaxis=dict(
-                title="Potència (kW)",
-                titlefont=dict(color="#2ecc71"),
-                tickfont=dict(color="#2ecc71"),
-                zeroline=True,
-                zerolinecolor='rgba(0,0,0,0.5)',
-                gridcolor='rgba(128, 128, 128, 0.2)'
-            ),
-            # Eix Y2: Cost/Preu (€)
-            yaxis2=dict(
-                title="Cost / Preu (€)",
-                titlefont=dict(color="#9b59b6"),
-                tickfont=dict(color="#9b59b6"),
-                overlaying="y",
-                side="right",
-                showgrid=False
-            ),
+            yaxis_title="Consum (W)",
             shapes=[
                 dict(
                     type="line",
@@ -907,14 +830,11 @@ def optimize(today = False):
 
         if success:
             # GUARDAR A FITXER
-            # GUARDAR A FITXER
             optimization_result = {
                 "timestamps": optimalScheduler.timestamps,
                 "total_balance": total_balance_hourly,
                 "total_price": price,
-                "devices_config": devices_config,
-                "global_generation": optimalScheduler.global_generator_forecast.get('forecast_data', []),
-                "global_consumption": optimalScheduler.global_consumer_forecast.get('forecast_data', [])
+                "devices_config": devices_config
             }
             if today:
                 save_date = datetime.today().strftime("%d_%m_%Y")
