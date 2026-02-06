@@ -19,6 +19,11 @@ class AbsEnergyStorage(AbsDevice):
         self.min = self._extract_numeric_value(config['restrictions'], 'min')
         self.max = self._extract_numeric_value(config['restrictions'], 'max')
         
+        # Ensure min <= max
+        if self.min > self.max:
+            logger.warning(f"⚠️ Min ({self.min}) > Max ({self.max}) for {self.name}. Swapping values.")
+            self.min, self.max = self.max, self.min
+            
         logger.debug(f"Initialized {self.name}: min={self.min} (type: {type(self.min)}), max={self.max} (type: {type(self.max)})")
     
     def _extract_numeric_value(self, restrictions, key):
