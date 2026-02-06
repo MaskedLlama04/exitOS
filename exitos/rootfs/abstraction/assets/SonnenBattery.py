@@ -14,8 +14,23 @@ class SonnenBattery(AbsEnergyStorage):
         super().__init__(config)
 
         # Obte la eficiencia i el percentatge actual
-        self.efficiency = database.get_latest_data_from_sensor(config["extra_vars"]["eficiencia"]["sensor_id"])[1]
-        self.actual_percentage = database.get_latest_data_from_sensor(config["extra_vars"]["percentatge_actual"]["sensor_id"])[1]
+        efficiency_data = database.get_latest_data_from_sensor(config["extra_vars"]["eficiencia"]["sensor_id"])
+        percentage_data = database.get_latest_data_from_sensor(config["extra_vars"]["percentatge_actual"]["sensor_id"])
+        
+        # Validate sensor data
+        if efficiency_data is None or efficiency_data[1] is None:
+            logger.warning(f"⚠️ Eficiència no disponible per a {self.name}, utilitzant valor per defecte 0.95")
+            self.efficiency = 0.95
+        else:
+            self.efficiency = float(efficiency_data[1])
+        
+        if percentage_data is None or percentage_data[1] is None:
+            logger.warning(f"⚠️ Percentatge actual no disponible per a {self.name}, utilitzant valor per defecte 50%")
+            self.actual_percentage = 0.5
+        else:
+            self.actual_percentage = float(percentage_data[1])
+        
+        logger.info(f"   ▫️ {self.name}: efficiency={self.efficiency}, actual_percentage={self.actual_percentage}")
 
         # Obte els sensors de control
         self.control_charge_sensor = config['control_vars']['carregar']['sensor_id']
