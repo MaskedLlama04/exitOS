@@ -25,9 +25,16 @@ class CarCharger(AbsConsumer):
         self.battery_capacity = float(config['restrictions']['capacitat_bateria']['value'])
         
         # Obté el percentatge actual de la bateria del cotxe
-        self.current_battery_percentage = database.get_latest_data_from_sensor(
+        percentage_data = database.get_latest_data_from_sensor(
             config["extra_vars"]["percentatge_actual"]["sensor_id"]
-        )[1]
+        )
+        
+        # Validate sensor data
+        if percentage_data is None or percentage_data[1] is None:
+            logger.warning(f"⚠️ Percentatge bateria cotxe no disponible per a {self.name}, utilitzant valor per defecte 50%")
+            self.current_battery_percentage = 50.0
+        else:
+            self.current_battery_percentage = float(percentage_data[1])
         
         # Potència màxima i mínima de càrrega (kW)
         self.max_charging_power = float(config['restrictions']['potencia_maxima']['value'])
@@ -35,6 +42,8 @@ class CarCharger(AbsConsumer):
         
         # Eficiència de càrrega (típicament 85-95% per a carregadors AC)
         self.efficiency = 0.90
+        
+        logger.info(f"   ▫️ {self.name}: battery={self.current_battery_percentage}%, capacity={self.battery_capacity}kWh")
         
         # Límits de càrrega de la bateria
         self.min = self.min_charging_power
