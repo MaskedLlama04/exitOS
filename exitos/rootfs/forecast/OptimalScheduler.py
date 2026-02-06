@@ -100,7 +100,22 @@ class OptimalScheduler:
             return has_data, all_devices_config, cost, total_balance
 
         except Exception as e:
+            import traceback
             logger.error(f"❌ No s'ha pogut realitzar l'optimització: {e}")
+            logger.error(traceback.format_exc())
+            
+            # Diagnòstic addicional
+            logger.error(f"🔍 Diagnòstic de dades:")
+            logger.error(f"   - Tipus electricity_prices: {type(self.electricity_prices)}")
+            if isinstance(self.electricity_prices, list) and len(self.electricity_prices) > 0:
+                logger.error(f"   - Primer preu: {self.electricity_prices[0]} (tipus: {type(self.electricity_prices[0])})")
+            logger.error(f"   - Tipus global_consumer_forecast: {type(self.global_consumer_forecast.get('forecast_data', None))}")
+            if isinstance(self.global_consumer_forecast.get('forecast_data'), list) and len(self.global_consumer_forecast['forecast_data']) > 0:
+                logger.error(f"   - Primer valor consum: {self.global_consumer_forecast['forecast_data'][0]} (tipus: {type(self.global_consumer_forecast['forecast_data'][0])})")
+            logger.error(f"   - Tipus global_generator_forecast: {type(self.global_generator_forecast.get('forecast_data', None))}")
+            if isinstance(self.global_generator_forecast.get('forecast_data'), list) and len(self.global_generator_forecast['forecast_data']) > 0:
+                logger.error(f"   - Primer valor generació: {self.global_generator_forecast['forecast_data'][0]} (tipus: {type(self.global_generator_forecast['forecast_data'][0])})")
+            
             return False, None, None, None
 
 
