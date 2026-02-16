@@ -109,6 +109,57 @@ def get_init():
     ip = request.environ.get('REMOTE_ADDR')
     token = database.supervisor_token
 
+    @app.route('/llmChat')
+    def llm_chat_page():
+        if logger:
+            logger.info("📄 Servint pàgina llmChat")
+        return template('./www/llmChat.html')
+
+    # --- DEFINICIÓ EINES LLM ---
+    def tool_get_current_time():
+        """Retorna l'hora actual del servidor"""
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def tool_get_sensor_value(sensor_id):
+        """Retorna l'últim valor conegut d'un sensor específic"""
+        # Intentem obtenir estat actual via API (si HA està disponible) o BD
+        val = database.get_current_sensor_state(sensor_id)
+        if val is None:
+            # Fallback a BD si no tenim estat directe o no estem en HA
+            data = database.get_latest_data_from_sensor(sensor_id)
+            if data:
+                return f"El valor de {sensor_id} és {data[1]} (a les {data[0]})"
+            else:
+                return f"No he trobat dades per al sensor {sensor_id}."
+        return f"El valor actual de {sensor_id} és {val}"
+
+    # --- REGISTRE EINES ---
+    llm_engine.register_tool(
+        name="get_current_time",
+        func=tool_get_current_time,
+        description="Obté la data i hora actuals del sistema.",
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    )
+
+    llm_engine.register_tool(
+        name="get_sensor_value",
+        func=tool_get_sensor_value,
+        description="Obté l'últim valor registrat d'un sensor específic (ex: sensor.bateria_soc, sensor.potencia_solar).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "sensor_id": {
+                    "type": "string",
+                    "description": "L'identificador del sensor (entity_id), per exemple 'sensor.battery_soc' o 'sensor.power_load'."
+                }
+            },
+            "required": ["sensor_id"]
+        }
+    )
 
     aux = database.get_forecasts_name()
     active_sensors = [x[0] for x in aux]
@@ -171,36 +222,24 @@ def config_page():
 @app.route('/optimization')
 def optimization_page():
 
+    # RESTRICCIONS PER A DISPOSITIU
+    config_path = 'resources/optimization_devices.conf'
+    devices_data = {}
+
+    if not os.path.exists(config_path):
+        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
+    else:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            devices_data = json.load(f)
+
     # DISPOSITIUS I ENTITATS ASSOCIADES
     devices_entities = database.get_devices_info()
 
     current_date = datetime.now().strftime('%d-%m-%Y')
     return template("./www/optimization.html",
                     current_date = current_date,
+                    device_types=json.dumps(devices_data),
                     device_entities = devices_entities)
-
-@app.route('/get_device_types/<locale>')
-def get_device_types(locale='ca'):
-    """Retorna el fitxer de configuració de dispositius segons l'idioma."""
-    # Validar locale per evitar path traversal
-    allowed_locales = ['ca', 'es', 'en']
-    if locale not in allowed_locales:
-        locale = 'ca'  # Default to Catalan
-    
-    config_path = f'resources/optimization_configs/optimization_devices_{locale}.conf'
-    
-    if not os.path.exists(config_path):
-        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
-        # Fallback to default Catalan config
-        config_path = 'resources/optimization_configs/optimization_devices_ca.conf'
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            devices_data = json.load(f)
-        return devices_data  # Return dict directly, Bottle will serialize it
-    except Exception as e:
-        logger.error(f"Error carregant configuració de dispositius: {e}")
-        return {}
 
 #endregion PAGE CREATIONS
 
@@ -1300,4 +1339,3 @@ if __name__ == "__main__":
         logger.error(traceback.format_exc())
     
     main()
-
