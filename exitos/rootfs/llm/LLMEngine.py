@@ -31,6 +31,8 @@ class LLMEngine:
         )
         # Diccionari per guardar l'historial de cada sessió (per session_id)
         self.conversations = {}
+        # Registre d'eines (tools)
+        self.tools = {}
         
         if logger:
             logger.info(f"🔧 LLMEngine inicialitzat:")
@@ -38,9 +40,32 @@ class LLMEngine:
             logger.info(f"   - URL base: {self.ollama_base_url}")
             logger.info(f"   - API endpoint: {self.api_url}")
 
+    def register_tool(self, name, func, description, parameters):
+        """
+        Registra una nova eina que l'LLM pot utilitzar.
+        :param name: Nom de la funció (per a l'LLM)
+        :param func: Funció Python a executar
+        :param description: Descripció del que fa l'eina
+        :param parameters: Diccionari amb l'esquema dels paràmetres (JSON Schema)
+        """
+        tool_definition = {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": parameters
+            }
+        }
+        self.tools[name] = {
+            "definition": tool_definition,
+            "func": func
+        }
+        if logger:
+            logger.info(f"🛠️ Eina registrada: {name} - {description}")
+
     def get_response(self, user_input, session_id="default"):
         """
-        Obté resposta d'Ollama mantenint l'historial de conversa per sessió.
+        Obté resposta d'Ollama mantenint l'historial de conversa per sessió i executant eines si cal.
         """
         try:
             if logger:
@@ -61,48 +86,84 @@ class LLMEngine:
                 "content": user_input
             })
             
-            # Preparar payload per Ollama API
-            payload = {
-                "model": self.model,
-                "messages": self.conversations[session_id],
-                "stream": False
-            }
-            
-            if logger:
-                logger.info(f"🤖 Enviant petició a Ollama:")
-                logger.info(f"   - URL: {self.api_url}")
-                logger.info(f"   - Model: {self.model}")
-                logger.info(f"   - Nombre de missatges a l'historial: {len(self.conversations[session_id])}")
-                logger.info(f"   - Payload: {json.dumps(payload, indent=2, ensure_ascii=False)[:500]}...")
-            
-            res = requests.post(self.api_url, json=payload, timeout=120)
-            
-            if logger:
-                logger.info(f"📡 Resposta rebuda:")
-                logger.info(f"   - Status code: {res.status_code}")
-                logger.info(f"   - Headers: {dict(res.headers)}")
-                logger.info(f"   - Response text (primeres 200 chars): {res.text[:200]}")
-            
-            res.raise_for_status()
-            
-            data = res.json()
-            if logger:
-                logger.info(f"   - Response JSON keys: {list(data.keys())}")
-            
-            # Ollama /api/chat retorna la resposta en data["message"]["content"]
-            assistant_message = data.get("message", {}).get("content", "No he rebut cap resposta vàlida del model.")
-            
-            if logger:
-                logger.info(f"✅ Resposta processada correctament: {assistant_message[:100]}...")
-            
-            # Afegir resposta de l'assistent a l'historial
-            self.conversations[session_id].append({
-                "role": "assistant",
-                "content": assistant_message
-            })
-            
-            return assistant_message
-            
+            # Bucle per gestionar crides a eines (màxim 5 iteracions per evitar bucles infinits)
+            for _ in range(5):
+                # Preparar llista d'eines per a l'API
+                available_tools = [t["definition"] for t in self.tools.values()] if self.tools else None
+
+                # Preparar payload per Ollama API
+                payload = {
+                    "model": self.model,
+                    "messages": self.conversations[session_id],
+                    "stream": False
+                }
+                
+                # Afegir eines si n'hi ha
+                if available_tools:
+                    payload["tools"] = available_tools
+
+                if logger:
+                    logger.info(f"🤖 Enviant petició a Ollama (Iteració eina):")
+                    logger.info(f"   - Eines disponibles: {list(self.tools.keys())}")
+                
+                # Crida a l'API
+                res = requests.post(self.api_url, json=payload, timeout=120)
+                res.raise_for_status()
+                data = res.json()
+                
+                # Processar resposta
+                message = data.get("message", {})
+                assistant_content = message.get("content", "")
+                tool_calls = message.get("tool_calls", [])
+                
+                # Afegir resposta (encara que sigui buida si hi ha tool_calls) a l'historial
+                self.conversations[session_id].append(message)
+
+                # Si no hi ha crides a eines, és la resposta final
+                if not tool_calls:
+                    if logger:
+                        logger.info(f"✅ Resposta final rebuda: {assistant_content[:100]}...")
+                    return assistant_content
+
+                if logger:
+                    logger.info(f"🛠️ L'LLM vol executar {len(tool_calls)} eines...")
+
+                # Executar cada eina sol·licitada
+                for tool_call in tool_calls:
+                    function_name = tool_call["function"]["name"]
+                    arguments = tool_call["function"]["arguments"]
+                    
+                    if function_name in self.tools:
+                        if logger:
+                            logger.info(f"   ▶️ Executant {function_name} amb args: {arguments}")
+                        
+                        try:
+                            # Executar la funció
+                            func = self.tools[function_name]["func"]
+                            result = func(**arguments)
+                            result_str = str(result)
+                        except Exception as e:
+                            logger.error(f"   ❌ Error executant {function_name}: {e}")
+                            result_str = f"Error executing tool {function_name}: {str(e)}"
+                        
+                        if logger:
+                            logger.info(f"   ◀️ Resultat: {result_str[:100]}...")
+
+                        # Afegir resultat a l'historial
+                        self.conversations[session_id].append({
+                            "role": "tool",
+                            "content": result_str,
+                            # "name": function_name # Nota: Ollama a vegades no necessita 'name' en role:tool, però ajuda
+                        })
+                    else:
+                        logger.warning(f"   ⚠️ Eina {function_name} no trobada!")
+                        self.conversations[session_id].append({
+                            "role": "tool",
+                            "content": f"Error: Tool '{function_name}' not found."
+                        })
+
+            return "He assolit el límit d'iteracions d'eines sense resposta final."
+
         except requests.exceptions.ConnectionError as e:
             if logger: 
                 logger.error(f"❌ Error de connexió amb Ollama a {self.api_url}: {e}")
