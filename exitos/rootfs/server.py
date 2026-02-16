@@ -109,57 +109,6 @@ def get_init():
     ip = request.environ.get('REMOTE_ADDR')
     token = database.supervisor_token
 
-    @app.route('/llmChat')
-    def llm_chat_page():
-        if logger:
-            logger.info("📄 Servint pàgina llmChat")
-        return template('./www/llmChat.html')
-
-    # --- DEFINICIÓ EINES LLM ---
-    def tool_get_current_time():
-        """Retorna l'hora actual del servidor"""
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def tool_get_sensor_value(sensor_id):
-        """Retorna l'últim valor conegut d'un sensor específic"""
-        # Intentem obtenir estat actual via API (si HA està disponible) o BD
-        val = database.get_current_sensor_state(sensor_id)
-        if val is None:
-            # Fallback a BD si no tenim estat directe o no estem en HA
-            data = database.get_latest_data_from_sensor(sensor_id)
-            if data:
-                return f"El valor de {sensor_id} és {data[1]} (a les {data[0]})"
-            else:
-                return f"No he trobat dades per al sensor {sensor_id}."
-        return f"El valor actual de {sensor_id} és {val}"
-
-    # --- REGISTRE EINES ---
-    llm_engine.register_tool(
-        name="get_current_time",
-        func=tool_get_current_time,
-        description="Obté la data i hora actuals del sistema.",
-        parameters={
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    )
-
-    llm_engine.register_tool(
-        name="get_sensor_value",
-        func=tool_get_sensor_value,
-        description="Obté l'últim valor registrat d'un sensor específic (ex: sensor.bateria_soc, sensor.potencia_solar).",
-        parameters={
-            "type": "object",
-            "properties": {
-                "sensor_id": {
-                    "type": "string",
-                    "description": "L'identificador del sensor (entity_id), per exemple 'sensor.battery_soc' o 'sensor.power_load'."
-                }
-            },
-            "required": ["sensor_id"]
-        }
-    )
 
     aux = database.get_forecasts_name()
     active_sensors = [x[0] for x in aux]
@@ -1339,3 +1288,4 @@ if __name__ == "__main__":
         logger.error(traceback.format_exc())
     
     main()
+
