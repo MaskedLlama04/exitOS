@@ -318,13 +318,13 @@ def get_scheduler_data():
             annotations=[
                 dict(
                     x=now,
-                    y=1.2,                 # una mica per sobre del gràfic
+                    y=1.2,
                     xref="x",
                     yref="paper",
                     text="Actual",
                     showarrow=False,
                     font=dict(color="red", size=12),
-                    textangle=-45            # rotat en diagonal
+                    textangle=-45
                 )
             ],
         )
@@ -335,6 +335,8 @@ def get_scheduler_data():
 
     except Exception as e:
         logger.exception(f"❌ Error obtenint scheduler': {e}")
+
+
 #endregion PÀGINA MAIN
 
 #region PÀGINA DEVICES
@@ -892,7 +894,8 @@ def optimize(today = False):
             consumer_id = global_consumer_id,
             generator_id = global_generator_id,
             horizon = horizon,
-            horizon_min = horizon_min)
+            horizon_min = horizon_min,
+            today = today)
 
         if success:
             # GUARDAR A FITXER
@@ -918,6 +921,9 @@ def optimize(today = False):
             schedule.clear('device_config_tasks')
             schedule.every().hour.at(":00").do(config_optimized_devices_HA).tag('device_config_tasks')
             logger.info("📅 Job programat per executar-se un cop cada hora (als minuts :00)")
+
+            flexibility()
+            logger.info("⏳ Flexibilitat calculada")
 
     except Exception as e:
         logger.error(f"❌ Error optimitzant: {str(e)}: {traceback.format_exc()}")
@@ -1079,7 +1085,7 @@ def flexibility():
                         total_fdown = [0] * len(timestamps)
                         total_power = [0] * len(timestamps)
 
-                    # Sumem valors si els timestamps coincideixen (assumim que sí per simplicitat al mateix run)
+
                     min_len = min(len(total_fup), len(fup))
                     for i in range(min_len):
                         total_fup[i] += fup[i]
