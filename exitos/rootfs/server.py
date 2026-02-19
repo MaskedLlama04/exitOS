@@ -70,6 +70,25 @@ forecast = Forecast.Forecaster(debug=True)
 optimalScheduler = OptimalScheduler.OptimalScheduler(database)
 blockchain = Blockchain.Blockchain()
 
+# --- DEFINICIÓ EINES LLM ---
+def tool_get_current_time():
+    """Retorna l'hora actual del servidor"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def tool_get_sensor_value(sensor_id):
+    """Retorna l'últim valor conegut d'un sensor específic"""
+    try:
+        val = database.get_current_sensor_state(sensor_id)
+        if val is None:
+            data = database.get_latest_data_from_sensor(sensor_id)
+            if data:
+                return f"El valor de {sensor_id} és {data[1]} (a les {data[0]})"
+            else:
+                return f"No he trobat dades per al sensor {sensor_id}."
+        return f"El valor actual de {sensor_id} és {val}"
+    except Exception as e:
+        return f"Error llegint sensor: {e}"
+
 # Ruta per servir fitxers estàtics i imatges des de 'www'
 @app.get('/static/<filepath:path>')
 
@@ -109,65 +128,6 @@ def get_init():
     ip = request.environ.get('REMOTE_ADDR')
     token = database.supervisor_token
 
-
-    @app.route('/llmChat')
-    def llm_chat_page():
-        if logger:
-            logger.info("📄 Servint pàgina llmChat")
-        return template('./www/llmChat.html')
-
-    # --- DEFINICIÓ EINES LLM ---
-    def tool_get_current_time():
-        """Retorna l'hora actual del servidor"""
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def tool_get_sensor_value(sensor_id):
-        """Retorna l'últim valor conegut d'un sensor específic"""
-        # Intentem obtenir estat actual via API (si HA està disponible) o BD
-        try:
-            val = database.get_current_sensor_state(sensor_id)
-            if val is None:
-                # Fallback a BD
-                data = database.get_latest_data_from_sensor(sensor_id)
-                if data:
-                    return f"El valor de {sensor_id} és {data[1]} (a les {data[0]})"
-                else:
-                    return f"No he trobat dades per al sensor {sensor_id}."
-            return f"El valor actual de {sensor_id} és {val}"
-        except Exception as e:
-            return f"Error llegint sensor: {e}"
-
-    # --- REGISTRE EINES ---
-    # Assegurem que el registre es fa quan tenim l'engine a punt
-    if hasattr(llm_engine, 'register_tool'):
-        llm_engine.register_tool(
-            name="get_current_time",
-            func=tool_get_current_time,
-            description="Obté la data i hora actuals del sistema.",
-            parameters={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        )
-
-        llm_engine.register_tool(
-            name="get_sensor_value",
-            func=tool_get_sensor_value,
-            description="Obté l'últim valor registrat d'un sensor específic (ex: sensor.bateria_soc).",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "sensor_id": {
-                        "type": "string", 
-                        "description": "L'identificador del sensor (entity_id)."
-                    }
-                },
-                "required": ["sensor_id"]
-            }
-        )
-    else:
-        if logger: logger.warning("❌ No puc registrar eines: register_tool no trobat a llm_engine")
 
     aux = database.get_forecasts_name()
     active_sensors = [x[0] for x in aux]
@@ -1335,6 +1295,38 @@ if __name__ == "__main__":
     try:
         logger.info("🔌 Inicialitzant rutes LLM i Eines...")
         llm_engine.init_routes(app, logger)
+        
+        # Registre d'eines
+        if hasattr(llm_engine.llm_engine, 'register_tool'):
+            llm_engine.llm_engine.register_tool(
+                name="get_current_time",
+                func=tool_get_current_time,
+                description="Obté la data i hora actuals del sistema.",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            )
+
+            llm_engine.llm_engine.register_tool(
+                name="get_sensor_value",
+                func=tool_get_sensor_value,
+                description="Obté l'últim valor registrat d'un sensor específic (ex: sensor.bateria_soc).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "sensor_id": {
+                            "type": "string", 
+                            "description": "L'identificador del sensor (entity_id)."
+                        }
+                    },
+                    "required": ["sensor_id"]
+                }
+            )
+        else:
+            logger.warning("❌ No puc registrar eines: register_tool no trobat")
+
     except Exception as e:
         logger.error(f"❌ Error inicialitzant LLM: {e}")
 
