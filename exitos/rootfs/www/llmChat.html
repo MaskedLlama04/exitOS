@@ -224,6 +224,9 @@
 </div>
 
 <script>
+    // URL base del servidor eXiT (sempre port 55023, independentment d'on s'accedeixi)
+    const SERVER_BASE_URL = `${window.location.protocol}//${window.location.hostname}:55023`;
+
     function sendMessage() {
         const input = document.getElementById('userInput');
         const sendBtn = document.getElementById('sendBtn');
@@ -242,10 +245,10 @@
         loadingIndicator.classList.add('show');
 
         console.log('🚀 Enviant missatge:', messageText);
-        console.log('📍 URL:', '/llm_response');
+        console.log('📍 URL:', `${SERVER_BASE_URL}/llm_response`);
 
         // Enviar al backend
-        fetch('/llm_response', {
+        fetch(`${SERVER_BASE_URL}/llm_response`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
