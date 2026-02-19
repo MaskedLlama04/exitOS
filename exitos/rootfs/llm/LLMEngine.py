@@ -27,7 +27,7 @@ class LLMEngine:
         )
         self.conversations = {}
         self.tools = {}
-        
+
         if logger:
             logger.info(f"🔧 LLMEngine inicialitzat (OLLAMA):")
             logger.info(f"   - Model: {self.model}")
@@ -38,7 +38,7 @@ class LLMEngine:
         Registra una nova eina que l'LLM pot utilitzar.
         """
         tool_definition = {
-            "type": "function", # Standard OpenAI/Ollama format
+            "type": "function",
             "function": {
                 "name": name,
                 "description": description,
@@ -114,7 +114,6 @@ class LLMEngine:
                 # Executar eines
                 for tool_call in tool_calls:
                     fn_name = tool_call["function"]["name"]
-                    # Ollama args are dict object
                     fn_args = tool_call["function"]["arguments"]
                     
                     if fn_name in self.tools:
@@ -126,7 +125,6 @@ class LLMEngine:
                             result_str = f"Error: {e}"
                             if logger: logger.error(f"   ❌ Error: {e}")
                         
-                        # Crear missatge de resposta d'eina
                         tool_msg = {
                             "role": "tool",
                             "content": result_str,
@@ -136,7 +134,7 @@ class LLMEngine:
                         self.conversations[session_id].append(tool_msg)
 
                     else:
-                         self.conversations[session_id].append({
+                        self.conversations[session_id].append({
                             "role": "tool",
                             "content": f"Error: Tool {fn_name} not found",
                             "name": fn_name
@@ -145,7 +143,7 @@ class LLMEngine:
             return "⚠️ Límit d'iteracions d'eines superat."
 
         except requests.exceptions.ConnectionError:
-             return f"❌ Error de connexió amb Ollama. Verifica la URL."
+            return f"❌ Error de connexió amb Ollama. Verifica la URL."
         except Exception as e:
             if logger: logger.error(f"❌ Error inesperat: {e}\n{traceback.format_exc()}")
             return f"Error inesperat: {e}"
@@ -158,8 +156,17 @@ class LLMEngine:
             return True
         return False
 
+
 # Instància global
 llm_engine = LLMEngine()
+
+
+def _add_cors_headers():
+    """Afegeix headers CORS a la resposta."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+
 
 def init_routes(app, external_logger):
     global logger
@@ -167,15 +174,24 @@ def init_routes(app, external_logger):
     
     if logger:
         logger.info("🔌 Inicialitzant rutes LLM...")
-    
+
+    # Hook global CORS: s'executa després de cada request
+    @app.hook('after_request')
+    def enable_cors():
+        _add_cors_headers()
+
     @app.route('/llmChat')
     def llm_chat_page():
         if logger:
             logger.info("📄 Servint pàgina llmChat")
         return template('./www/llmChat.html')
 
-    @app.route('/llm_response', method='POST')
+    @app.route('/llm_response', method=['POST', 'OPTIONS'])
     def llm_response():
+        # Resposta ràpida al preflight CORS
+        if request.method == 'OPTIONS':
+            return {}
+
         if logger:
             logger.info("🔵 Endpoint /llm_response cridat")
         try:
@@ -191,22 +207,15 @@ def init_routes(app, external_logger):
             if not user_message:
                 return json.dumps({'status': 'error', 'message': 'El missatge està buit'})
             
-            # Obtenir session_id (pots usar IP, cookie o generar un ID únic)
             session_id = bottle_request.environ.get('REMOTE_ADDR', 'default')
             
-            # Cridem el LLM amb historial
             response_text = llm_engine.get_response(user_message, session_id)
             
-            result = json.dumps({
+            response.content_type = 'application/json'
+            return json.dumps({
                 'status': 'ok',
                 'response': response_text
             })
-            
-            # Afegir headers CORS per si de cas
-            response.content_type = 'application/json'
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            
-            return result
             
         except Exception as e:
             if logger:
@@ -216,12 +225,14 @@ def init_routes(app, external_logger):
                 'status': 'error', 
                 'message': 'Ho sento, hi ha hagut un error sol·licitant la resposta.'
             })
-    
-    @app.route('/llm_clear', method='POST')
+
+    @app.route('/llm_clear', method=['POST', 'OPTIONS'])
     def llm_clear():
         """
         Endpoint per esborrar l'historial de conversa.
         """
+        if request.method == 'OPTIONS':
+            return {}
         try:
             session_id = bottle_request.environ.get('REMOTE_ADDR', 'default')
             llm_engine.clear_conversation(session_id)
@@ -229,8 +240,7 @@ def init_routes(app, external_logger):
         except Exception as e:
             if logger: logger.error(f" Error esborrant conversa: {e}")
             return json.dumps({'status': 'error', 'message': 'Error esborrant conversa'})
-    
-    # Endpoint de test per verificar connectivitat
+
     @app.route('/llm_test', method='GET')
     def llm_test():
         if logger:
@@ -248,4 +258,3 @@ def init_routes(app, external_logger):
         logger.info("   - POST /llm_response")
         logger.info("   - POST /llm_clear")
         logger.info("   - GET  /llm_test")
-
