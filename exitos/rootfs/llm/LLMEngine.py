@@ -12,14 +12,10 @@ class LLMEngine:
     Class to handle communication with Ollama LLM with conversation history and tools.
     """
     def __init__(self, model=None, ollama_url=None):
-        # Ollama Configuration
-        self.model = model or os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+        # Ollama Configuration (Hardcoded perque vull)
+        self.model = "llama3.1:latest"
+        self.ollama_base_url = "http://192.168.191.70:11434"
         
-        # Determine URL
-        if ollama_url is None:
-            ollama_url = os.getenv("OLLAMA_URL", "http://192.168.191.70:11434/")
-        
-        self.ollama_base_url = ollama_url.rstrip('/')
         self.api_url = f"{self.ollama_base_url}/api/chat"
         self.headers = {"Content-Type": "application/json"}
 
