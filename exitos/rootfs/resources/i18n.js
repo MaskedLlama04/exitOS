@@ -106,10 +106,6 @@ var I18n = (function () {
 
     function onLanguageChange(callback) {
         _onLanguageChangeCallbacks.push(callback);
-        // If the current locale is already loaded, notify the callback immediately
-        if (_resources[_locale]) {
-            callback(_locale);
-        }
     }
 
     return {

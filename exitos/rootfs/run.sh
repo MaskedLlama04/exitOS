@@ -1,6 +1,6 @@
 #!/usr/bin/with-contenv bashio
 
-echo "Creem la carpeta (/share/exitos/) si no existeix, aqui guardarem fitxers persistents."
+echo "Iniciant exitOS..."
 mkdir -p /share/exitos/
 
 # Exportar configuració d'Ollama des de les opcions
