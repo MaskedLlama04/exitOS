@@ -190,24 +190,36 @@ def config_page():
 @app.route('/optimization')
 def optimization_page():
 
-    # RESTRICCIONS PER A DISPOSITIU
-    config_path = 'resources/optimization_devices.conf'
-    devices_data = {}
-
-    if not os.path.exists(config_path):
-        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
-    else:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            devices_data = json.load(f)
-
     # DISPOSITIUS I ENTITATS ASSOCIADES
     devices_entities = database.get_devices_info()
 
     current_date = datetime.now().strftime('%d-%m-%Y')
     return template("./www/optimization.html",
                     current_date = current_date,
-                    device_types=json.dumps(devices_data),
                     device_entities = devices_entities)
+
+@app.route('/get_device_types/<locale>')
+def get_device_types(locale='ca'):
+    """Retorna el fitxer de configuració de dispositius segons l'idioma."""
+    # Validar locale per evitar path traversal
+    allowed_locales = ['ca', 'es', 'en']
+    if locale not in allowed_locales:
+        locale = 'ca'  # Default to Catalan
+    
+    config_path = f'resources/optimization_configs/optimization_devices_{locale}.conf'
+    
+    if not os.path.exists(config_path):
+        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
+        # Fallback to default Catalan config
+        config_path = 'resources/optimization_configs/optimization_devices_ca.conf'
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            devices_data = json.load(f)
+        return devices_data  # Return dict directly, Bottle will serialize it
+    except Exception as e:
+        logger.error(f"Error carregant configuració de dispositius: {e}")
+        return {}
 
 #endregion PAGE CREATIONS
 
@@ -278,15 +290,100 @@ def get_scheduler_data():
             annotations=[
                 dict(
                     x=now,
-                    y=1.2,                 # una mica per sobre del gràfic
+                    y=1.2,
                     xref="x",
                     yref="paper",
                     text="Actual",
                     showarrow=False,
                     font=dict(color="red", size=12),
-                    textangle=-45            # rotat en diagonal
+                    textangle=-45
                 )
             ],
+        )
+
+        fig_json = fig.to_plotly_json()
+        response.content_type = "application/json"
+        return json.dumps(fig_json, cls=plotly.utils.PlotlyJSONEncoder)
+
+    except Exception as e:
+        logger.exception(f"❌ Error obtenint scheduler': {e}")
+
+@app.route('/get_flexi_data')
+def get_global_flexi_data():
+    try:
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, "optimizations/"+today+".pkl")
+        if not os.path.exists(full_path):
+            optimize(today=True)
+        if not os.path.exists(full_path): return json.dumps("ERROR")
+
+        optimization_db = joblib.load(full_path)
+
+        graph_timestamps = optimization_db['timestamps']
+        graph_optimization = optimization_db['total_balance']
+        graph_fup = optimization_db['total_fup']
+        graph_fdown = optimization_db['total_fdown']
+
+
+        graph_df = pd.DataFrame({
+            "hora": pd.to_datetime(graph_timestamps),
+            "optimitzacio": graph_optimization,
+            "fup": graph_fup,
+            "fdown": graph_fdown,
+        })
+        graph_df['hora_str'] = graph_df['hora'].dt.strftime('%H:%M')
+
+        fig = go.Figure()
+
+        # Línia principal (verd amb fill)
+        fig.add_trace(go.Scatter(
+            x=graph_df["hora"],
+            y=graph_df["optimitzacio"],
+            mode='lines',
+            name="Optimització",
+            line=dict(color="green", width=2)
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=graph_df["hora"],
+            y=graph_df["fup"],
+            mode="lines+markers",
+            line=dict(color="red"),
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=graph_df["hora"],
+            y=graph_df["fdown"],
+            mode="lines+markers",
+            line=dict(color="cyan"),
+        ))
+
+        now = datetime.now()
+
+        fig.update_layout(
+            height=400,
+            yaxis=dict(zeroline=False),
+            xaxis=dict(
+                tickmode='array',
+                tickvals=graph_timestamps,
+                ticktext=graph_df['hora_str'],
+                tickangle=-45,
+                tickfont=dict(size=13),
+                title="Hores"
+            ),
+            yaxis_title="Consum (W)",
+            shapes=[
+                dict(
+                    type="line",
+                    x0=now,
+                    x1=now,
+                    y0=0,
+                    y1=1,
+                    xref="x",
+                    yref="paper",
+                    line=dict(color="red", width=2, dash="dash")
+                )
+            ]
         )
 
         fig_json = fig.to_plotly_json()
@@ -852,7 +949,8 @@ def optimize(today = False):
             consumer_id = global_consumer_id,
             generator_id = global_generator_id,
             horizon = horizon,
-            horizon_min = horizon_min)
+            horizon_min = horizon_min,
+            today = today)
 
         if success:
             # GUARDAR A FITXER
@@ -862,6 +960,12 @@ def optimize(today = False):
                 "total_price": price,
                 "devices_config": devices_config
             }
+
+            total_fup, total_fdown = flexibility(optimization_result)
+
+            optimization_result["total_fup"] = total_fup
+            optimization_result["total_fdown"] = total_fdown
+
             if today:
                 save_date = datetime.today().strftime("%d_%m_%Y")
             else:
@@ -875,9 +979,12 @@ def optimize(today = False):
             joblib.dump(optimization_result, full_path)
             logger.info(f"✏️ Optimització diària guardada al fitxer {full_path}")
 
+            #Configurar Scheduler
             schedule.clear('device_config_tasks')
             schedule.every().hour.at(":00").do(config_optimized_devices_HA).tag('device_config_tasks')
             logger.info("📅 Job programat per executar-se un cop cada hora (als minuts :00)")
+
+
 
     except Exception as e:
         logger.error(f"❌ Error optimitzant: {str(e)}: {traceback.format_exc()}")
@@ -970,24 +1077,11 @@ def get_device_config_data(file_name):
 #endregion PÀGINA OPTIMITZACIÓ
 
 #region FLEXIBILITY
-def flexibility():
+def flexibility(optimization_db):
     """
     Calcula la flexibilitat de l'optimització realitzada.
     Ara cerca quin dispositiu s'ha optimitzat i delega el càlcul a la classe del dispositiu.
     """
-
-    today_str = datetime.today().strftime("%d_%m_%Y")
-    tomorrow_str = (datetime.today() + timedelta(days=1)).strftime("%d_%m_%Y")
-
-    base_path = os.path.join(forecast.models_filepath, "optimizations/")
-    full_path_today = os.path.join(base_path, today_str + ".pkl")
-    full_path_tomorrow = os.path.join(base_path, tomorrow_str + ".pkl")
-
-    optimization_db = None
-    if os.path.exists(full_path_today):
-        optimization_db = joblib.load(full_path_today)
-    elif os.path.exists(full_path_tomorrow):
-        optimization_db = joblib.load(full_path_tomorrow)
 
     if optimization_db is None:
         return [], [], [], []
@@ -997,10 +1091,9 @@ def flexibility():
                   list(optimalScheduler.energy_storages.values())
 
     # Variables per acumular resultats de flexibilitat totals
-    total_fup = []
-    total_fdown = []
-    total_power = []
-    final_timestamps = None
+    total_fup = optimization_db['total_balance'].copy()
+    total_fdown = optimization_db['total_balance'].copy()
+
 
     for device in all_devices:
         if device.name in optimization_db['devices_config']:
@@ -1032,29 +1125,19 @@ def flexibility():
                     
                     logger.info(f"✏️ Flexibilitat de {device.name} guardada al fitxer {full_path}")
 
-                    # Acumulem al total
-                    if final_timestamps is None:
-                        final_timestamps = timestamps
-                        total_fup = [0] * len(timestamps)
-                        total_fdown = [0] * len(timestamps)
-                        total_power = [0] * len(timestamps)
 
-                    # Sumem valors si els timestamps coincideixen (assumim que sí per simplicitat al mateix run)
-                    min_len = min(len(total_fup), len(fup))
-                    for i in range(min_len):
+                    for i in range(len(total_fup)):
                         total_fup[i] += fup[i]
                         total_fdown[i] += fdown[i]
-                        total_power[i] += power[i]
 
             except Exception as e:
                 logger.error(f"❌ Error calculating flexibility for {device.name}: {e}")
                 continue
 
     # Retornem els totals acumulats
-    if final_timestamps is not None:
-        return total_fup, total_fdown, total_power, final_timestamps
+    return total_fup, total_fdown
 
-    return [], [], [], []
+
 
 
 def generate_plotly_flexibility():
@@ -1290,12 +1373,12 @@ def main():
 # Executem la funció main
 if __name__ == "__main__":
     logger.info("🌳 ExitOS Iniciat")
-    
+
     # Inicialitzar rutes LLM
     try:
         logger.info("🔌 Inicialitzant rutes LLM i Eines...")
         llm_engine.init_routes(app, logger)
-        
+
         # Registre d'eines
         if hasattr(llm_engine.llm_engine, 'register_tool'):
             llm_engine.llm_engine.register_tool(
@@ -1317,7 +1400,7 @@ if __name__ == "__main__":
                     "type": "object",
                     "properties": {
                         "sensor_id": {
-                            "type": "string", 
+                            "type": "string",
                             "description": "L'identificador del sensor (entity_id)."
                         }
                     },
