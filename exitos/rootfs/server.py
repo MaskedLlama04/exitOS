@@ -819,7 +819,7 @@ def get_forecast_data(model_name):
         real_values = []
         real_values_timestamps = []
         for i in range(len(forecasts['real_value'])):
-            if not math.isnan(forecasts['real_value'][i]):
+            if not pd.isna(forecasts['real_value'][i]):
                 real_values.append(forecasts['real_value'][i])
                 real_values_timestamps.append(forecasts['timestamp'].tolist()[i])
 
