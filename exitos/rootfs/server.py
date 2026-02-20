@@ -329,6 +329,18 @@ def get_global_flexi_data():
 
         graph_timestamps = optimization_db['timestamps']
         graph_optimization = optimization_db['total_balance']
+
+        # Corregim KeyError si les claus no existeixen (per retrocompatibilitat o fallada prèvia)
+        if 'total_fup' not in optimization_db or 'total_fdown' not in optimization_db:
+            logger.warning("⚠️ Claus de flexibilitat no trobades. Recalculant...")
+            if not optimalScheduler.consumers:
+                optimalScheduler.prepare_data_for_optimization()
+
+            total_fup, total_fdown, _, _ = flexibility(optimization_db)
+            optimization_db['total_fup'] = total_fup
+            optimization_db['total_fdown'] = total_fdown
+            joblib.dump(optimization_db, full_path)
+
         graph_fup = optimization_db['total_fup']
         graph_fdown = optimization_db['total_fdown']
 
@@ -969,7 +981,7 @@ def optimize(today = False):
                 "devices_config": devices_config
             }
 
-            total_fup, total_fdown = flexibility(optimization_result)
+            total_fup, total_fdown, _, _ = flexibility(optimization_result)
 
             optimization_result["total_fup"] = total_fup
             optimization_result["total_fdown"] = total_fdown
@@ -1085,22 +1097,29 @@ def get_device_config_data(file_name):
 #endregion PÀGINA OPTIMITZACIÓ
 
 #region FLEXIBILITY
-def flexibility(optimization_db):
+def flexibility(optimization_db=None):
     """
     Calcula la flexibilitat de l'optimització realitzada.
     Ara cerca quin dispositiu s'ha optimitzat i delega el càlcul a la classe del dispositiu.
     """
 
     if optimization_db is None:
-        return [], [], [], []
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, "optimizations/" + today + ".pkl")
+        if os.path.exists(full_path):
+            optimization_db = joblib.load(full_path)
+        else:
+            return [], [], [], []
 
     all_devices = list(optimalScheduler.consumers.values()) + \
                   list(optimalScheduler.generators.values()) + \
                   list(optimalScheduler.energy_storages.values())
 
     # Variables per acumular resultats de flexibilitat totals
-    total_fup = optimization_db['total_balance'].copy()
-    total_fdown = optimization_db['total_balance'].copy()
+    total_balance = optimization_db['total_balance']
+    timestamps = optimization_db['timestamps']
+    total_fup = total_balance.copy()
+    total_fdown = total_balance.copy()
 
 
     for device in all_devices:
@@ -1142,17 +1161,14 @@ def flexibility(optimization_db):
                 logger.error(f"❌ Error calculating flexibility for {device.name}: {e}")
                 continue
 
-    # Retornem els totals acumulats
-    return total_fup, total_fdown
+    # Retornem els totals acumulats, el consum/balanç i els timestamps
+    return total_fup, total_fdown, total_balance, timestamps
 
 
 
 
 def generate_plotly_flexibility():
-    Fup, Fdown, consum, timestamps = flexibility()
-
-    fup_line = [consum[t] + Fup[t] for t in range(len(timestamps))]
-    fdown_line = [consum[t] - Fdown[t] for t in range(len(timestamps))]
+    fup_line, fdown_line, consum, timestamps = flexibility()
 
     graph_df = pd.DataFrame({
         "hora": pd.to_datetime(timestamps),
@@ -1413,6 +1429,28 @@ if __name__ == "__main__":
                         }
                     },
                     "required": ["sensor_id"]
+                }
+            )
+
+            llm_engine.llm_engine.register_tool(
+                name="get_current_day",
+                func=tool_get_current_day,
+                description="Obté la data d'avui (dia, mes i any).",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            )
+
+            llm_engine.llm_engine.register_tool(
+                name="get_current_year",
+                func=tool_get_current_year,
+                description="Obté l'any en el que estem.",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                 }
             )
         else:
