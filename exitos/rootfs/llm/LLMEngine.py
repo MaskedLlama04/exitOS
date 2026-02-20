@@ -171,9 +171,6 @@ def _add_cors_headers():
 def init_routes(app, external_logger):
     global logger
     logger = external_logger
-    
-    if logger:
-        logger.info("🔌 Inicialitzant rutes LLM...")
 
     # Hook global CORS: s'executa després de cada request
     @app.hook('after_request')
@@ -182,8 +179,6 @@ def init_routes(app, external_logger):
 
     @app.route('/llmChat')
     def llm_chat_page():
-        if logger:
-            logger.info("📄 Servint pàgina llmChat")
         return template('./www/llmChat.html')
 
     @app.route('/llm_response', method=['POST', 'OPTIONS'])
