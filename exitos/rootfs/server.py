@@ -75,6 +75,14 @@ def tool_get_current_time():
     """Retorna l'hora actual del servidor"""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def tool_get_current_day():
+    """Retorna la data actual (dia, mes i any)"""
+    return datetime.now().strftime("%d-%m-%Y")
+
+def tool_get_current_year():
+    """Retorna l'any actual"""
+    return datetime.now().strftime("%Y")
+
 def tool_get_sensor_value(sensor_id):
     """Retorna l'últim valor conegut d'un sensor específic"""
     try:
