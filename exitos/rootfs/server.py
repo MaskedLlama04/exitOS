@@ -97,6 +97,54 @@ def tool_get_sensor_value(sensor_id):
     except Exception as e:
         return f"Error llegint sensor: {e}"
 
+def tool_get_optimization_configs():
+    """Retorna totes les configuracions d'optimització guardades per l'usuari"""
+    try:
+        configs_path = os.path.join(forecast.models_filepath, "optimizations/configs")
+        if not os.path.exists(configs_path):
+            return "No hi ha cap configuració d'optimització guardada."
+
+        json_files = [f for f in os.listdir(configs_path) if f.endswith(".json")]
+        if not json_files:
+            return "No hi ha cap configuració d'optimització guardada."
+
+        result_lines = []
+        for filename in json_files:
+            filepath = os.path.join(configs_path, filename)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+
+            device_name = cfg.get("device_name", filename.replace(".json", ""))
+            friendly_type = cfg.get("friendly_name", cfg.get("device_type", "Desconegut"))
+            category = cfg.get("device_category", "")
+
+            result_lines.append(f"--- Dispositiu: {device_name} ---")
+            result_lines.append(f"  Tipus: {friendly_type} (Categoria: {category})")
+
+            restrictions = cfg.get("restrictions", {})
+            if restrictions:
+                result_lines.append("  Restriccions:")
+                for r_id, r_data in restrictions.items():
+                    result_lines.append(f"    - {r_data.get('name', r_id)}: {r_data.get('value', '')}")
+
+            extra_vars = cfg.get("extra_vars", {})
+            if extra_vars:
+                result_lines.append("  Variables de mesura:")
+                for v_id, v_data in extra_vars.items():
+                    result_lines.append(f"    - {v_data.get('label_name', v_id)}: {v_data.get('friendly_name', v_data.get('sensor_id', ''))}")
+
+            control_vars = cfg.get("control_vars", {})
+            if control_vars:
+                result_lines.append("  Variables de control:")
+                for v_id, v_data in control_vars.items():
+                    result_lines.append(f"    - {v_data.get('label_name', v_id)}: {v_data.get('friendly_name', v_data.get('sensor_id', ''))}")
+
+        return "\n".join(result_lines)
+
+    except Exception as e:
+        return f"Error llegint les configuracions d'optimització: {e}"
+
+
 # Ruta per servir fitxers estàtics i imatges des de 'www'
 @app.get('/static/<filepath:path>')
 
@@ -1447,6 +1495,23 @@ if __name__ == "__main__":
                 name="get_current_year",
                 func=tool_get_current_year,
                 description="Obté l'any en el que estem.",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            )
+
+            llm_engine.llm_engine.register_tool(
+                name="get_optimization_configs",
+                func=tool_get_optimization_configs,
+                description=(
+                    "Obté totes les configuracions d'optimització de dispositius que l'usuari té guardades. "
+                    "Inclou el nom del dispositiu, el tipus, les restriccions (ex: capacitat màxima de la bateria) "
+                    "i les variables de mesura i control associades. "
+                    "Utilitza aquesta eina quan l'usuari pregunti per les seves configuracions actuals, "
+                    "vulgui saber quins dispositius té configurats, o necessiti consells sobre optimització energètica."
+                ),
                 parameters={
                     "type": "object",
                     "properties": {},
