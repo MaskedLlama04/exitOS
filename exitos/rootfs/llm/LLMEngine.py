@@ -246,6 +246,31 @@ def init_routes(app, external_logger):
             if logger: logger.error(f" Error esborrant conversa: {e}")
             return json.dumps({'status': 'error', 'message': 'Error esborrant conversa'})
 
+    @app.route('/llm_history', method=['GET', 'OPTIONS'])
+    def llm_history():
+        """
+        Retorna l'historial de missatges de la sessió actual (sense missatges de sistema ni d'eines).
+        """
+        if request.method == 'OPTIONS':
+            return {}
+        try:
+            session_id = bottle_request.environ.get('REMOTE_ADDR', 'default')
+            conversation = llm_engine.conversations.get(session_id, [])
+
+            # Filtrem: només retornem missatges de l'usuari i l'assistent, no system ni tool
+            visible_messages = [
+                {"role": msg["role"], "content": msg.get("content", "")}
+                for msg in conversation
+                if msg["role"] in ("user", "assistant") and msg.get("content", "").strip()
+            ]
+
+            response.content_type = 'application/json'
+            return json.dumps({'status': 'ok', 'messages': visible_messages})
+        except Exception as e:
+            if logger: logger.error(f"Error recuperant historial: {e}")
+            return json.dumps({'status': 'error', 'messages': []})
+
+
     @app.route('/llm_test', method='GET')
     def llm_test():
         if logger:
