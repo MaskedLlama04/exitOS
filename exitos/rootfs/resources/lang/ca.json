@@ -130,7 +130,8 @@
         "welcome_message": "Hola! Soc l'assistent virtual d'eXiT. En què et puc ajudar avui?",
         "input_placeholder": "Escriu el teu missatge aquí...",
         "error_process": "Error: No s'ha pogut processar la sol·licitud.",
-        "error_contact": "Error: No s'ha pogut contactar amb el servidor."
+        "error_contact": "Error: No s'ha pogut contactar amb el servidor.",
+        "clear_btn": "Netejar vista"
     },
     "forecast_metrics": {
         "step_name": {

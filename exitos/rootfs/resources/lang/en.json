@@ -130,7 +130,8 @@
         "welcome_message": "Hello! I'm the eXiT virtual assistant. How can I help you today?",
         "input_placeholder": "Type your message here...",
         "error_process": "Error: Could not process the request.",
-        "error_contact": "Error: Could not contact the server."
+        "error_contact": "Error: Could not contact the server.",
+        "clear_btn": "Clear view"
     },
     "forecast_metrics": {
         "step_name": {
