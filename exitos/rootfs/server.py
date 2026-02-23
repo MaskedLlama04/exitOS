@@ -145,6 +145,70 @@ def tool_get_optimization_configs():
         return f"Error llegint les configuracions d'optimització: {e}"
 
 
+def tool_get_available_device_types():
+    """Retorna tots els tipus de dispositius disponibles per configurar a l'optimitzador, amb les seves restriccions i variables"""
+    try:
+        config_path = "resources/optimization_configs/optimization_devices_ca.conf"
+        if not os.path.exists(config_path):
+            config_path = "resources/optimization_devices_ca.conf"
+        if not os.path.exists(config_path):
+            return "No s'ha trobat el fitxer de tipus de dispositius."
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            device_types = json.load(f)
+
+        result_lines = [
+            "=== TIPUS DE DISPOSITIUS DISPONIBLES PER A L'OPTIMITZACIÓ ===",
+            "Aquests són els tipus de dispositius que l'usuari pot escollir quan crea una nova configuració d'optimització.",
+            ""
+        ]
+
+        for type_id, type_data in device_types.items():
+            nom = type_data.get("nom", type_id)
+            categoria = type_data.get("tipus", "Desconegut")
+            result_lines.append(f"--- {nom} (id: {type_id}, categoria: {categoria}) ---")
+
+            restriccions = type_data.get("restriccions", [])
+            if restriccions:
+                result_lines.append("  Restriccions a configurar:")
+                for r in restriccions:
+                    if isinstance(r, dict):
+                        desc = f"    - {r.get('nom', r.get('id', ''))}"
+                        if "min" in r:
+                            desc += f" (mínim: {r['min']})"
+                        if "max" in r:
+                            desc += f" (màxim: {r['max']})"
+                        if "step" in r:
+                            desc += f" (increment: {r['step']})"
+                        result_lines.append(desc)
+                    else:
+                        result_lines.append(f"    - {r}")
+
+            variables = type_data.get("variables", [])
+            if variables:
+                result_lines.append("  Variables de mesura (sensors de lectura):")
+                for v in variables:
+                    result_lines.append(f"    - {v.get('nom', v.get('id', ''))}")
+
+            variables_control = type_data.get("variables_control", [])
+            if variables_control:
+                result_lines.append("  Variables de control (actuadors):")
+                for v in variables_control:
+                    result_lines.append(f"    - {v.get('nom', v.get('id', ''))}")
+
+            result_lines.append("")
+
+        result_lines.append(
+            "NOTA: Les categories possibles són: 'Consumer' (consumidor d'energia), "
+            "'EnergyStorage' (emmagatzematge d'energia, com bateries) i 'Generator' (generador, com plaques solars)."
+        )
+
+        return "\n".join(result_lines)
+
+    except Exception as e:
+        return f"Error llegint els tipus de dispositius disponibles: {e}"
+
+
 # Ruta per servir fitxers estàtics i imatges des de 'www'
 @app.get('/static/<filepath:path>')
 
@@ -1511,6 +1575,23 @@ if __name__ == "__main__":
                     "i les variables de mesura i control associades. "
                     "Utilitza aquesta eina quan l'usuari pregunti per les seves configuracions actuals, "
                     "vulgui saber quins dispositius té configurats, o necessiti consells sobre optimització energètica."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            )
+
+            llm_engine.llm_engine.register_tool(
+                name="get_available_device_types",
+                func=tool_get_available_device_types,
+                description=(
+                    "Obté tots els tipus de dispositius disponibles per configurar a l'optimitzador, "
+                    "incloent les seves restriccions (paràmetres a definir, com capacitat màxima) i variables "
+                    "(sensors de mesura i actuadors de control). "
+                    "Utilitza aquesta eina quan l'usuari vulgui saber quines opcions té per configurar un nou dispositiu, "
+                    "o quan necessitis entendre les opcions disponibles per fer una recomanació de configuració."
                 ),
                 parameters={
                     "type": "object",
