@@ -1523,7 +1523,12 @@ if __name__ == "__main__":
                 description="Obté la data i hora actuals del sistema.",
                 parameters={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "dummy": {
+                            "type": "string",
+                            "description": "Ignoring this"
+                        }
+                    },
                     "required": []
                 }
             )
@@ -1550,7 +1555,12 @@ if __name__ == "__main__":
                 description="Obté la data d'avui (dia, mes i any).",
                 parameters={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "dummy": {
+                            "type": "string",
+                            "description": "Ignoring this"
+                        }
+                    },
                     "required": []
                 }
             )
@@ -1561,7 +1571,12 @@ if __name__ == "__main__":
                 description="Obté l'any en el que estem.",
                 parameters={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "dummy": {
+                            "type": "string",
+                            "description": "Ignoring this"
+                        }
+                    },
                     "required": []
                 }
             )
@@ -1578,7 +1593,12 @@ if __name__ == "__main__":
                 ),
                 parameters={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "config_name": {
+                            "type": "string",
+                            "description": "Opcional. Si saps el nom del dispositiu, posa'l aquí. Si no, deixa-ho en blanc per llistar-los tots."
+                        }
+                    },
                     "required": []
                 }
             )
@@ -1595,7 +1615,12 @@ if __name__ == "__main__":
                 ),
                 parameters={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "device_type_id": {
+                            "type": "string",
+                            "description": "Opcional. Si saps el tipus exacte de dispositiu, posa'l aquí. Si no, deixa-ho en blanc per llistar-los tots."
+                        }
+                    },
                     "required": []
                 }
             )
