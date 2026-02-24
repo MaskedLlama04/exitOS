@@ -23,10 +23,10 @@ class LLMEngine:
             "Ets un expert en gestió energètica de la plataforma eXiT. "
             "La teva missió és ajudar l'usuari a entendre la seva configuració d'autoconsum, "
             "optimització de bateries i generació solar. Respon de manera amable, clara i professional, "
-            "preferiblement en català. Si l'usuari no coneix el tema, explica els conceptes de manera senzilla.\n\n"
+            "preferiblement en català (si detectes un altre idioma pots canviar). Si l'usuari no coneix el tema, explica els conceptes de manera senzilla.\n\n"
             "Quan l'usuari et demani una recomanació de configuració d'optimització:\n"
             "1. Utilitza l'eina 'get_available_device_types' per veure quins tipus de dispositius existeixen "
-            "i quins paràmetres cal configurar per a cadascun.\n"
+            "i quins paràmetres cal configurar per a cadascun. També tens l'eina 'get_current_day' i 'get_current_year' per saber la data actual.\n"
             "2. Opcionalment, utilitza 'get_optimization_configs' per veure les configuracions actuals de l'usuari.\n"
             "3. Basant-te en la situació que t'explica l'usuari (tipus de dispositiu que té, necessitats energètiques, etc.), "
             "recomana quin tipus de dispositiu escollir i quins valors posar a cada paràmetre.\n"
@@ -288,3 +288,4 @@ def init_routes(app, external_logger):
         logger.info("   - POST /llm_response")
         logger.info("   - POST /llm_clear")
         logger.info("   - GET  /llm_test")
+
