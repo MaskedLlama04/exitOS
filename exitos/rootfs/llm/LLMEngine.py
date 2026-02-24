@@ -33,7 +33,10 @@ class LLMEngine:
             "4. Explica SEMPRE el raonament darrere de cada decisió: per què has escollit aquell tipus, "
             "per què proposes aquells valors concrets per a les restriccions, i com afectarà a l'optimització energètica.\n"
             "5. Si no tens prou informació per fer una recomanació precisa, pregunta a l'usuari "
-            "les dades que necessites (capacitat del dispositiu, consum habitual, etc.)."
+            "les dades que necessites (capacitat del dispositiu, consum habitual, etc.).\n\n"
+            "IMPORTANT sobre les eines (tools):\n"
+            "- Si una eina NO té paràmetres definits (com 'get_current_time'), NO t'inventis arguments. Crida-la amb un objecte buit {}.\n"
+            "- No afegeixis mai paràmetres que no estiguin definits en la definició de l'eina."
         )
         self.conversations = {}
         self.tools = {}
@@ -129,7 +132,15 @@ class LLMEngine:
                     if fn_name in self.tools:
                         if logger: logger.info(f"   ▶️ {fn_name}({fn_args})")
                         try:
-                            result = self.tools[fn_name]["func"](**fn_args)
+                            # Robustesa: Si l'eina no té paràmetres definits, ignorem els que enviï l'LLM (hallucinations)
+                            tool_def = self.tools[fn_name]["definition"]["function"]
+                            has_params = bool(tool_def.get("parameters", {}).get("properties"))
+                            
+                            if not has_params:
+                                result = self.tools[fn_name]["func"]()
+                            else:
+                                result = self.tools[fn_name]["func"](**fn_args)
+                                
                             result_str = str(result)
                         except Exception as e:
                             result_str = f"Error: {e}"
@@ -288,4 +299,3 @@ def init_routes(app, external_logger):
         logger.info("   - POST /llm_response")
         logger.info("   - POST /llm_clear")
         logger.info("   - GET  /llm_test")
-
