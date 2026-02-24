@@ -844,7 +844,7 @@ def forecast_model(selected_forecast, today = True):
     forecast_df, real_values, sensor_id = ForecasterManager.predict_consumption_production(model_name=selected_forecast)
 
     if today:  forecasted_done_time = datetime.today().strftime('%d-%m-%Y')
-    else: forecasted_done_time = (datetime.today() + timedelta(days=1)).strftime("%d_%m_%Y")
+    else: forecasted_done_time = (datetime.today() + timedelta(days=1)).strftime("%d-%m-%Y")
 
     timestamps = forecast_df.index.tolist()
     predictions = forecast_df['value'].tolist()
