@@ -127,7 +127,9 @@ def database_graph_page():
     sensors_id = database.get_all_saved_sensors_id()
     graphs_html = {}
 
-    return template('./www/databaseView.html', sensors_id=sensors_id, graphs=graphs_html)
+    return template('./www/databaseView.html',
+                    sensors_id=sensors_id,
+                    graphs=graphs_html)
 
 @app.get('/model')
 def create_model_page(active_model = "None"):
@@ -179,28 +181,6 @@ def optimization_page():
                     current_date = current_date,
                     device_entities = devices_entities)
 
-@app.route('/get_device_types/<locale>')
-def get_device_types(locale='ca'):
-    """Retorna el fitxer de configuració de dispositius segons l'idioma."""
-    # Validar locale per evitar path traversal
-    allowed_locales = ['ca', 'es', 'en']
-    if locale not in allowed_locales:
-        locale = 'ca'  # Default to Catalan
-    
-    config_path = f'resources/optimization_configs/optimization_devices_{locale}.conf'
-    
-    if not os.path.exists(config_path):
-        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
-        # Fallback to default Catalan config
-        config_path = 'resources/optimization_configs/optimization_devices_ca.conf'
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            devices_data = json.load(f)
-        return devices_data  # Return dict directly, Bottle will serialize it
-    except Exception as e:
-        logger.error(f"Error carregant configuració de dispositius: {e}")
-        return {}
 
 #endregion PAGE CREATIONS
 
@@ -1054,6 +1034,29 @@ def get_device_config_data(file_name):
     device_config['flexi_timestamps'] = flexi_data['timestamps']
 
     return {"status": "ok", "device_config": device_config}
+
+@app.route('/get_device_types/<locale>')
+def get_device_types(locale='ca'):
+    """Retorna el fitxer de configuració de dispositius segons l'idioma."""
+    # Validar locale per evitar path traversal
+    allowed_locales = ['ca', 'es', 'en']
+    if locale not in allowed_locales:
+        locale = 'ca'  # Default to Catalan
+
+    config_path = f'resources/optimization_configs/optimization_devices_{locale}.conf'
+
+    if not os.path.exists(config_path):
+        logger.warning(f"⚠️ - No s'ha trobat el fitxer de configuració: {config_path}")
+        # Fallback to default Catalan config
+        config_path = 'resources/optimization_configs/optimization_devices_ca.conf'
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            devices_data = json.load(f)
+        return devices_data  # Return dict directly, Bottle will serialize it
+    except Exception as e:
+        logger.error(f"Error carregant configuració de dispositius: {e}")
+        return {}
 
 #endregion PÀGINA OPTIMITZACIÓ
 

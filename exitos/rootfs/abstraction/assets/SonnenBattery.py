@@ -73,8 +73,7 @@ class SonnenBattery(AbsEnergyStorage):
 
     def controla(self, config,current_hour):
 
-        positive_value = abs(config[current_hour])
-        value_to_HA = positive_value * 1000
+        value_to_HA = abs(config[current_hour])
 
         if config[current_hour] >= 0:
             logger.info(f"     ▫️ Configurant {self.name} -> 🔋 Charge {value_to_HA}")
@@ -126,8 +125,8 @@ class SonnenBattery(AbsEnergyStorage):
         
         SoC_max = self.max
         SoC_min = self.min
-        Pc_max = 2.5 # Potència màxima de càrrega
-        Pd_max = 2.5 # Potència màxima de descàrrega
+        Pc_max = 2500 # Potència màxima de càrrega
+        Pd_max = 2500 # Potència màxima de descàrrega
         
         delta_t = 1 # Hora
         
@@ -147,8 +146,8 @@ class SonnenBattery(AbsEnergyStorage):
 
             flex_down = max(0, Pb_t + max_discharge_possible)
                                        
-            fup.append(2.5)
-            fdown.append(-2.5)
+            fup.append(SoC_max)
+            fdown.append(SoC_min)
             delta_t += 1
             
         return fup, fdown, Power_list, timestamps[:min_len]

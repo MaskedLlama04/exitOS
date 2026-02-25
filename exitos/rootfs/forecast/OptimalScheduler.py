@@ -78,7 +78,6 @@ class OptimalScheduler:
                 total_balance = self.__calc_total_balance(config = result, total = False)
                 all_devices_config = self.get_hourly_config_for_device(result)
             else:
-                result = None
                 cost = []
                 total_balance = []
                 all_devices_config = []
