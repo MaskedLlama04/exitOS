@@ -146,8 +146,8 @@ class SonnenBattery(AbsEnergyStorage):
 
             flex_down = max(0, Pb_t + max_discharge_possible)
                                        
-            fup.append(SoC_max)
-            fdown.append(SoC_min)
+            fup.append(2500)
+            fdown.append(-2500)
             delta_t += 1
             
         return fup, fdown, Power_list, timestamps[:min_len]
