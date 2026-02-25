@@ -11,8 +11,8 @@ class AbsEnergyStorage(AbsDevice):
     def __init__(self, config):
         # Initialize the energy source with the given configuration and name
         super().__init__(config)
-        self.min = float(config['restrictions']['min']['value'])
-        self.max = float(config['restrictions']['max']['value'])
+        self.min = float(config['restrictions']['min']['value']) # W
+        self.max = float(config['restrictions']['max']['value']) # W
 
 
 
