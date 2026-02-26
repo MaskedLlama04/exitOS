@@ -191,6 +191,8 @@
             "negative_r2": "Negative R²: model is worse than average!",
             "low_r2": "Low R²: {0} - Poor predictive model",
             "high_mape": "Very high MAPE: {0}%",
+            "high_wape": "Very high WAPE: {0}%",
+            "bias_high": "High systematic deviation (Bias): {0}",
             "nan_metrics": "Metrics with NaN values!",
             "forecast_rows_mismatch": "Forecast does not have expected rows: {0} vs {1}",
             "forecast_outliers": "Many outliers in predictions: {0}%",
@@ -226,13 +228,19 @@
             "columns": "Columns: {0}",
             "temporal_coverage": "Temporal coverage: {0} days",
             "all_validations_passed": "All validations passed successfully",
-            "check_step": "Check this step - May affect model performance"
+            "check_step": "Check this step - May affect model performance",
+            "correlation_title": "🔗 Feature-Target Correlation:",
+            "max_correlation": "Max correlation:",
+            "features_with_signal": "Features with signal (Corr > 0.1):",
+            "top_features": "Top features:"
         },
         "labels": {
             "mae": "MAE",
             "rmse": "RMSE",
             "r2": "R²",
             "mape": "MAPE (%)",
+            "wape": "WAPE (%)",
+            "bias": "Bias",
             "training_time": "Training Time"
         },
         "descriptions": {
@@ -240,6 +248,8 @@
             "rmse": "Root Mean Squared Error",
             "r2": "Determination Coefficient (0-1, higher is better)",
             "mape": "Mean Absolute Percentage Error",
+            "wape": "Weighted Absolute Percentage Error - More robust for energy",
+            "bias": "Mean Error - Indicates if model overestimates or underestimates",
             "training_time": "Total model training time"
         }
     },

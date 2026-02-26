@@ -606,6 +606,10 @@ class Forecaster:
         # PAS 5 - Desfer el dataset i guardar matrius X i y
         nomy = y
         y = pd.to_numeric(X[nomy], errors='raise')
+        
+        # VALIDACIÓ CORRELACIÓ (Abans d'eliminar y i fer selecció)
+        self.metrics.validate_feature_target_correlation(X, nomy)
+        
         del X[nomy]
         
         # Divisió Train/Validation/Test (60/20/20) 
