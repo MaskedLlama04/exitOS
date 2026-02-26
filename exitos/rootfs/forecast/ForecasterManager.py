@@ -43,7 +43,7 @@ def get_meteodata(latitude, longitude, archive_meteo:pd.DataFrame, days_foreward
     return meteo_data
 
 
-def predict_consumption_production(model_name:str='newModel.pkl'):
+def predict_consumption_production(model_name, database):
     """
     Prediu la consumició tenint en compte les hores actives dels assets
     """
@@ -52,7 +52,10 @@ def predict_consumption_production(model_name:str='newModel.pkl'):
 
     # Carreguem el model
     forecaster.load_model(model_filename=model_name)
-    initial_data = forecaster.db['initial_data']
+    
+    # Obtenim dades actualitzades
+    sensors_id = forecaster.db['sensors_id']
+    initial_data = database.get_data_from_sensor(sensors_id)
 
     first_timestamp_metric = initial_data.index[0] if not initial_data.empty else None 
 
@@ -73,7 +76,17 @@ def predict_consumption_production(model_name:str='newModel.pkl'):
     if meteo_data_boolean: meteo_data = get_meteodata(forecaster.db['lat'], forecaster.db['lon'], forecaster.db['meteo_data'],2)
     else: meteo_data = None
 
-    extra_sensors_df = forecaster.db['extra_sensors']
+    original_extra_sensors = forecaster.db['extra_sensors']
+    extra_sensors_df = None
+    if original_extra_sensors is not None and isinstance(original_extra_sensors, dict):
+        extra_sensors_df = {}
+        for s in original_extra_sensors.keys():
+            aux = database.get_data_from_sensor(s)
+            if not aux.empty and 'timestamp' in aux.columns:
+                aux['timestamp'] = pd.to_datetime(aux['timestamp'])
+                if aux['timestamp'].dt.tz is None:
+                     aux['timestamp'] = aux['timestamp'].dt.tz_localize('UTC')
+            extra_sensors_df[s] = aux
 
     data = forecaster.prepare_dataframes(initial_data, meteo_data, extra_sensors_df)
 
@@ -85,8 +98,3 @@ def predict_consumption_production(model_name:str='newModel.pkl'):
     prediction , real_values , sensor_id = forecaster.forecast(data, 'value', forecaster.db['model'], future_steps=48)
 
     return prediction, real_values, sensor_id
-
-
-
-
-
