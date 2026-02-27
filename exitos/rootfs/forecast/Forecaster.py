@@ -730,79 +730,65 @@ class Forecaster:
         if 'timestamp' in history_df.columns:
             history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.tz_localize(None)
             history_df.set_index('timestamp', inplace=True)
-        elif history_df.index.name == 'timestamp' or isinstance(history_df.index, pd.DatetimeIndex):
-            history_df.index = pd.to_datetime(history_df.index).tz_localize(None)
             
-        # Identificar on acaben les dades reals (on y no és NaN)
-        last_real_idx = history_df[y].last_valid_index()
-        if last_real_idx is None:
-            last_real_idx = history_df.index[-1]
-            
-        current_time = last_real_idx
+        # Interpolació temporal inicial per assegurar continuïtat
+        history_df.interpolate(method='time', inplace=True)
+        history_df.bfill(inplace=True) # Seguretat extra
         
-        # Guardarem aquí totes les prediccions futures
-        future_predictions = []
+        predictions = []
         future_indexes = []
         
         # Bucle de predicció recursiva
-        # Comencem des del darrer ràpid de dades reals (y != NaN)
-        # i anem omplint fins a completar future_steps
         for i in range(future_steps):
-            next_timestamp = current_time + pd.Timedelta(hours=1)
+            last_timestamp = history_df.index[-1]
+            next_timestamp = last_timestamp + pd.Timedelta(hours=1)
             future_indexes.append(next_timestamp)
             
-            # --- PREPARACIÓ DE LA FILA SEGÜENT ---
-            # Si el timestamp ja existeix (p.ex. tenim Meteo futura), usem aquella fila
-            if next_timestamp in history_df.index:
-                next_row = history_df.loc[[next_timestamp]].copy()
-                next_row[y] = np.nan # Ens assegurem que y és NaN per predir-lo
-            else:
-                # Si no existeix, creem fila nova fent persistència de l'anterior pas
-                next_row = pd.DataFrame(index=[next_timestamp], columns=history_df.columns)
-                for col in next_row.columns:
-                    if col != y:
-                        # Busquem l'últim valor conegut al nostre history_df en creixement
-                        next_row[col] = history_df[col].iloc[-1] 
-                    else:
-                        next_row[col] = np.nan
-
-            # Afegim la fila (encara sense y) a la història per poder fer windowing
-            # Nota: usem una còpia per no embrutar el 'data' original circularment si calgués
-            history_df = pd.concat([history_df[~history_df.index.duplicated(keep='last')], next_row])
-            history_df = history_df[~history_df.index.duplicated(keep='last')]
+            # Creem una nova fila (buid) per al següent pas
+            new_row = pd.DataFrame(index=[next_timestamp], columns=history_df.columns)
             
-            # Només necessitem una finestra recent per fer el pipeline
-            df_slice = history_df.tail(200).copy()
+            # Omplim amb persistència les variables exògenes
+            for col in new_row.columns:
+                if col != y: 
+                     new_row[col] = history_df[col].iloc[-1]
+                else:
+                     new_row[col] = np.nan
+                     
+            # Afegim la nova fila a l'històric de treball (només la cua necessària per velocitat)
+            working_window = pd.concat([history_df.tail(200), new_row])
             
             # --- PIPELINE DE PREPARACIÓ ---
-
-            # 1. Windowing
-            df_windowed = self.do_windowing(df_slice, look_back)
             
-            # 2. Timestamp to attrs
+            # 1. Windowing
+            df_windowed = self.do_windowing(working_window, look_back)
+            
+            # Ens quedem només amb l'última fila
             current_step_df = df_windowed.tail(1).copy()
+            
+            # 2. Atributs temporals
             current_step_df = self.timestamp_to_attrs(current_step_df, extra_vars)
             
-            # 3. Colinearity remove
+            # 3. Eliminar colinearitats
             if colinearity_remove_level_to_drop:
                 existing_cols = [col for col in colinearity_remove_level_to_drop if col in current_step_df.columns]
                 current_step_df.drop(existing_cols, axis=1, inplace=True)
                 
-            # 4. Drop y
+            # 4. Eliminar variable objectiu 'y'
             if y in current_step_df.columns:
                 del current_step_df[y]
                 
+            # 5. Gestió de NaNs
             current_step_df.bfill(inplace=True)
             current_step_df.fillna(0, inplace=True)
             
-            # 5. Scaler
+            # 6. Escalat
             if scaler:
                 try:
                     current_step_df = pd.DataFrame(scaler.transform(current_step_df), index=current_step_df.index, columns=current_step_df.columns)
                 except Exception:
                     pass
 
-            # 6. Model select
+            # 7. Selecció d'atributs
             if model_select:
                 try:
                      current_step_array = model_select.transform(current_step_df)
@@ -815,32 +801,27 @@ class Forecaster:
             try:
                 pred_val = float(model.predict(current_step_array)[0])
             except Exception as e:
-                logger.error(f"Error en predicció recursiva pas {i}: {e}")
+                logger.error(f"Error en predicció pas {i}: {e}")
                 pred_val = 0.0
 
-            future_predictions.append(pred_val)
+            predictions.append(pred_val)
             
             # Actualitzem el valor predit a l'històric per a la següent iteració
-            history_df.loc[next_timestamp, y] = pred_val
-            current_time = next_timestamp
-
-        # Resultats del futur
+            new_row[y] = pred_val
+            history_df = pd.concat([history_df, new_row])
+            
         forecast_output = pd.DataFrame(
-            future_predictions,
+            predictions,
             index=future_indexes,
             columns=[y]
         )
         
-        # --- CÀLCUL DEL "FIT" (PASSAT) ---
-        # Per visualitzar com el model s'ajusta a les dades que ja coneixem
-        # Tanquem el sensor original (sense les prediccions que acabem de fer)
-        df_fit = self.do_windowing(data.dropna(subset=[y]), look_back)
+        # Recalculem el passat en mode batch per al gràfic 'fit'
+        df_fit = self.do_windowing(data, look_back)
         df_fit = self.timestamp_to_attrs(df_fit, extra_vars)
-        
         if colinearity_remove_level_to_drop:
              existing_cols = [col for col in colinearity_remove_level_to_drop if col in df_fit.columns]
              df_fit.drop(existing_cols, axis=1, inplace=True)
-        
         if y in df_fit.columns:
             real_values_column = df_fit[y]
             del df_fit[y]
@@ -857,7 +838,6 @@ class Forecaster:
              
         out = pd.DataFrame(model.predict(df_fit), index=real_values_column.index, columns=[y])
         
-        # Unim passat predit i futur predit
         final_prediction = pd.concat([out, forecast_output])
         
         return final_prediction, real_values_column,  self.db['sensors_id']

@@ -61,9 +61,16 @@ def predict_consumption_production(model_name, database):
 
     # Filtrar dades històriques als últims 14 dies per al forecast
     if not initial_data.empty and 'timestamp' in initial_data.columns:
-        # Assegurar que tenim timezone naive per ser consistents
+        # Fem la comparació en UTC
         #cutoff_date = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=14)
-        initial_data['timestamp'] = pd.to_datetime(initial_data['timestamp']).dt.tz_localize(None)
+        initial_data['timestamp'] = pd.to_datetime(initial_data['timestamp'])
+        
+        # Assegurar que tenim timezone UTC per comparar amb cutoff_date
+        if initial_data['timestamp'].dt.tz is None:
+            initial_data['timestamp'] = initial_data['timestamp'].dt.tz_localize('UTC')
+            
+        #initial_data = initial_data[initial_data['timestamp'] >= cutoff_date
+
 
     meteo_data_boolean = forecaster.db['meteo_data_is_selected']
     if meteo_data_boolean: meteo_data = get_meteodata(forecaster.db['lat'], forecaster.db['lon'], forecaster.db['meteo_data'],2)
