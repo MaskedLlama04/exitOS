@@ -1330,6 +1330,14 @@ def daily_task():
         logger.warning(f"📈 [{hora_actual}] - INICIANT PROCÉS D'OPTIMITZACIÓ")
         optimize(today=False)
 
+        # Guardem marcador que hem corregut avui
+        try:
+             today_str = datetime.today().strftime('%d-%m-%Y')
+             marker_file = os.path.join(forecast.models_filepath, "config", "last_daily_run.txt")
+             with open(marker_file, 'w') as f:
+                 f.write(today_str)
+        except: pass
+
     except Exception as e:
         hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
         logger.error(f" ❌ [{hora_actual}] - ERROR al daily task : {e}")
@@ -1354,6 +1362,7 @@ def monthly_task():
         hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
         logger.error(f" ❌ [{hora_actual}] - ERROR al monthly task : {e}")
 
+
 def daily_forecast_task():
     try:
         hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
@@ -1375,6 +1384,48 @@ def daily_forecast_task():
     except Exception as e:
         hora_actual = datetime.now().strftime('%Y-%m-%d %H:00')
         logger.error(f" ❌ [{hora_actual}] - ERROR al daily forecast : {e}")
+
+def catch_up_daily_tasks():
+    """
+    Executa les tasques diàries si el servidor s'ha encès després de l'hora programada 
+    i encara no han corregut avui.
+    """
+    try:
+        today_str = datetime.today().strftime('%d-%m-%Y')
+        marker_file = os.path.join(forecast.models_filepath, "config", "last_daily_run.txt")
+        needs_run = True
+        
+        if os.path.exists(marker_file):
+            with open(marker_file, 'r') as f:
+                last_run = f.read().strip()
+                if last_run == today_str:
+                    needs_run = False
+        
+        if needs_run:
+            logger.info(f"⚡ Iniciant tasca de recuperació diària (Catch-up) pel dia {today_str}...")
+            # En recàrrec (catch-up), usem today=True perquè estem en el mateix dia real
+            # en que volem que surti el label del forecast a la DB.
+            # daily_task() actualitza DB i crida daily_forecast_task()
+            
+            # Actualitzem la base de dades
+            database.update_database("all")
+            database.clean_database_hourly_average(all_sensors=True)
+
+            # Forecastings
+            models_saved = [os.path.basename(f) for f in glob.glob(forecast.models_filepath + "forecastings/*.pkl")]
+            for model in models_saved:
+                logger.debug(f"     [Catch-up] Running daily forecast for {model}")
+                forecast_model(model, today=True)
+
+            # Optimització
+            optimize(today=False)
+            
+            with open(marker_file, 'w') as f:
+                f.write(today_str)
+            logger.info("✅ Tasca de recuperació completada.")
+            
+    except Exception as e:
+        logger.error(f"❌ Error en catch_up_daily_tasks: {e}")
 
 def certificate_hourly_task():
     try:
@@ -1512,6 +1563,9 @@ def main():
 # Executem la funció main
 if __name__ == "__main__":
     logger.info("🌳 ExitOS Iniciat")
+
+    # Tasques de recuperació (en cas que no hagin corregut a les 23:30h)
+    catch_up_daily_tasks()
 
     # Inicialitzar rutes LLM
     try:
