@@ -969,7 +969,7 @@ def optimize(today = False):
 
         price = []
 
-        success, devices_config, price, total_balance_hourly = optimalScheduler.start_optimization(
+        success, devices_config, price, total_balance_hourly, total_consumers, total_generators = optimalScheduler.start_optimization(
             consumer_id = global_consumer_id,
             generator_id = global_generator_id,
             horizon = horizon,
@@ -981,6 +981,8 @@ def optimize(today = False):
             optimization_result = {
                 "timestamps": optimalScheduler.timestamps,
                 "total_balance": total_balance_hourly,
+                "total_consumers": total_consumers,
+                "total_generators": total_generators,
                 "total_price": price,
                 "devices_config": devices_config
             }
@@ -1440,6 +1442,8 @@ def push_data_to_exit_server():
 
         forecast_flex_up = []
         forecast_flex_down = []
+        forecast_consumption = []
+        forecast_pv_power = []
 
         if os.path.exists(opt_path):
             opt_data = joblib.load(opt_path)
@@ -1455,6 +1459,12 @@ def push_data_to_exit_server():
                 # Array sencera per enviar al CEM:
                 forecast_flex_down = [float(x) / 1000.0 for x in opt_data['total_fdown']]
 
+            if 'total_consumers' in opt_data:
+                forecast_consumption = [float(x) / 1000.0 for x in opt_data['total_consumers']]
+
+            if 'total_generators' in opt_data:
+                forecast_pv_power = [float(x) / 1000.0 for x in opt_data['total_generators']]
+
         # 3. Valors a publicar a OpenRemote
         attrs = {
             "pv_power":    float(generation_val)  / 1000.0,
@@ -1468,6 +1478,10 @@ def push_data_to_exit_server():
             attrs["forecast_flex_up"] = forecast_flex_up
         if len(forecast_flex_down) > 0:
             attrs["forecast_flex_down"] = forecast_flex_down
+        if len(forecast_consumption) > 0:
+            attrs["forecast_consumption"] = forecast_consumption
+        if len(forecast_pv_power) > 0:
+            attrs["forecast_pv_power"] = forecast_pv_power
 
         logger.info(f"📤 Enviant dades a OpenRemote (MQTT {mqtt_host}:{mqtt_port}): {list(attrs.keys())}")
 
