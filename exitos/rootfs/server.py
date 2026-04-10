@@ -16,6 +16,9 @@ from pandas import to_datetime
 
 from bottle import Bottle, template, run, static_file, HTTPError, request, response
 from datetime import datetime, timedelta
+import requests
+import paho.mqtt.client as mqtt
+import ssl
 
 from logging_config import setup_logger
 from collections import OrderedDict
@@ -1391,6 +1394,108 @@ def config_optimized_devices_HA():
     except Exception as e:
         logger.error(f"❌ [{datetime.now().strftime('%d:%m:%Y %H:%m')}] -  Error configurant horariament un dispositiu a H.A {e}")
 
+def push_data_to_exit_server():
+    """Recull dades de consum, generació i flexibilitat i les envia a OpenRemote via MQTT."""
+    try:
+        config_dir = forecast.models_filepath + 'config/user.config'
+        consumption_val = 0
+        generation_val = 0
+        f_up = 0
+        f_down = 0
+
+        # Llegir opcions MQTT de l'add-on (fitxer generat per HA des de config.yaml)
+        options_path = "/data/options.json"
+        mqtt_host   = "192.168.191.70"
+        mqtt_port   = 8883
+        mqtt_user   = "master:exitos_ha_1"
+        mqtt_secret = "oS6iFESM1WR2kTOuqiBYryMc1sXRWkiU"
+        asset_id    = "5IjwWIZD5hJaGzHX4F5ZAX"
+
+        if os.path.exists(options_path):
+            with open(options_path, 'r') as f:
+                opts = json.load(f)
+            mqtt_host   = opts.get("mqtt_host",     mqtt_host)
+            mqtt_port   = int(opts.get("mqtt_port", mqtt_port))
+            mqtt_user   = opts.get("mqtt_user",     mqtt_user)
+            mqtt_secret = opts.get("mqtt_secret",   mqtt_secret)
+            asset_id    = opts.get("mqtt_asset_id", asset_id)
+
+        # 1. Consum i Generació des de sensors (Temps Real)
+        if os.path.exists(config_dir):
+            conf = joblib.load(config_dir)
+            c_sensor = conf.get('consumption')
+            g_sensor = conf.get('generation')
+
+            if c_sensor and c_sensor != 'None':
+                c_data = database.get_latest_data_from_sensor(c_sensor)
+                if c_data: consumption_val = c_data[1]
+
+            if g_sensor and g_sensor != 'None':
+                g_data = database.get_latest_data_from_sensor(g_sensor)
+                if g_data: generation_val = g_data[1]
+
+        # 2. Flexibilitat i Forecasts (des dels fitxers d'optimització)
+        today_str = datetime.today().strftime("%d_%m_%Y")
+        opt_path = os.path.join(forecast.models_filepath, "optimizations/" + today_str + ".pkl")
+
+        forecast_flex_up = []
+        forecast_flex_down = []
+
+        if os.path.exists(opt_path):
+            opt_data = joblib.load(opt_path)
+            current_hour = datetime.now().hour
+            
+            if 'total_fup' in opt_data and len(opt_data['total_fup']) > current_hour:
+                f_up = opt_data['total_fup'][current_hour]
+                # Array sencera per enviar al CEM:
+                forecast_flex_up = [float(x) / 1000.0 for x in opt_data['total_fup']]
+                
+            if 'total_fdown' in opt_data and len(opt_data['total_fdown']) > current_hour:
+                f_down = opt_data['total_fdown'][current_hour]
+                # Array sencera per enviar al CEM:
+                forecast_flex_down = [float(x) / 1000.0 for x in opt_data['total_fdown']]
+
+        # 3. Valors a publicar a OpenRemote
+        attrs = {
+            "pv_power":    float(generation_val)  / 1000.0,
+            "consumption": float(consumption_val) / 1000.0,
+            "flex_up":     float(f_up)            / 1000.0,
+            "flex_down":   float(f_down)          / 1000.0,
+        }
+
+        # Si hem llegit les previsions agrupades (Arrays)
+        if len(forecast_flex_up) > 0:
+            attrs["forecast_flex_up"] = forecast_flex_up
+        if len(forecast_flex_down) > 0:
+            attrs["forecast_flex_down"] = forecast_flex_down
+
+        logger.info(f"📤 Enviant dades a OpenRemote (MQTT {mqtt_host}:{mqtt_port}): {list(attrs.keys())}")
+
+        # 4. Connexió MQTT
+        client = mqtt.Client(client_id="exitos_ha_1")
+        client.username_pw_set(mqtt_user, mqtt_secret)
+        client.tls_set(cert_reqs=ssl.CERT_NONE)
+        client.tls_insecure_set(True)
+        client.connect(mqtt_host, mqtt_port, 60)
+        client.loop_start()
+
+        # Format del Tòpic MQTT OpenRemote
+        realm = mqtt_user.split(":")[0]          
+        client_name = mqtt_user.split(":")[1]    
+        base = f"{realm}/{client_name}/writeattributevalue"
+
+        for attr, val in attrs.items():
+            topic = f"{base}/{attr}/{asset_id}"
+            client.publish(topic, json.dumps(val))
+            
+        time.sleep(1)   
+        client.loop_stop()
+        client.disconnect()
+        logger.info("✅ Dades (i forecasts) enviades correctament a OpenRemote.")
+
+    except Exception as e:
+        logger.error(f"❌ Error en push_data_to_exit_server (MQTT): {e}")
+
 def run_threaded(job_func):
     job_thread = threading.Thread(target=job_func)
     job_thread.start()
@@ -1398,6 +1503,7 @@ def run_threaded(job_func):
 schedule.every().day.at("23:30").do(run_threaded, daily_task)
 schedule.every().day.at("02:00").do(run_threaded, monthly_task)
 schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
+schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
 
 def run_scheduled_tasks():
     logger.debug("🗓️ SCHEDULER STARTED")
@@ -1596,4 +1702,3 @@ if __name__ == "__main__":
         logger.error(f"❌ Error inicialitzant LLM: {e}")
 
     main()
-    
