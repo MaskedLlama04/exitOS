@@ -258,7 +258,7 @@ class SqlDB():
 
     def clean_database_hourly_average(self, sensor_id=None, all_sensors=True):
         """
-        Neteja dades promediant per hora o agrupant pel valor més freqüent si són textos.
+        Neteja dades promediant per hora.
         Si all_sensors=True, processa tots els sensors.
         Si all_sensors=False, requereix un sensor_id específic.
         """
@@ -266,6 +266,7 @@ class SqlDB():
         mode = "TOTAL" if all_sensors else f"SENSOR: {sensor_id}"
         logger.info(f"🧹 INICIANT NETEJA ({mode})")
         with self._get_connection() as con:
+            # Mirem quins sensors hem de processar
             cur = con.cursor()
             if all_sensors:
                 sensor_ids = [row[0] for row in con.execute("SELECT DISTINCT sensor_id FROM dades").fetchall()]
@@ -279,49 +280,31 @@ class SqlDB():
                 logger.error("❗ No s'han trobat sensors per processar.")
                 return
 
+            # Bucle de processament de dades
             limit_date = (datetime.now() - timedelta(days=21)).isoformat()
 
             for sensor_id in sensor_ids:
                 logger.debug(f"      Processant sensor: {sensor_id}")
                 df = pd.read_sql_query(
-                    f"SELECT timestamp, value FROM dades WHERE sensor_id = ? AND timestamp >= ?", con,
-                    params=(sensor_id, limit_date)
+                    f"SELECT timestamp, value FROM dades WHERE sensor_id = ? AND timestamp >= ?", con, params=(sensor_id,limit_date)
                 )
                 if df.empty:
                     logger.info(f"           ❌ No hi ha dades per al sensor {sensor_id} dins el període. S'omet.")
                     continue
 
-                # Convertim només el timestamp d'entrada
                 df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                df['value'] = pd.to_numeric(df['value'], errors='coerce')
                 df['hour'] = df['timestamp'].dt.floor('h')
 
-                # 1. Intentem convertir els valors a numèrics temporalment
-                numeric_values = pd.to_numeric(df['value'], errors='coerce')
-
-                # 2. Determinem si el sensor és numèric:
-                # Si un cop convertit hi ha algun número vàlid, considerem que és un sensor de números.
-                # També cobrim el cas en què estigui 100% buit.
-                is_numeric = numeric_values.notna().any() or df['value'].isna().all()
-
-                if is_numeric:
-                    # 3a. Sensor numèric: mode tradicional amb la mitjana
-                    df['value'] = numeric_values
-                    df_grouped = df.groupby('hour', as_index=False)['value'].mean()
-                else:
-                    # 3b. Sensor de text (ex: "Charging"): mode categòric
-                    # Agafem la moda (el valor que més estona ha estat actiu durant aquesta hora).
-                    # Nota: Si vols l'últim estat en lloc del més freqüent, canvia lambda per: lambda x: x.iloc[-1]
-                    df_grouped = df.groupby('hour', as_index=False)['value'].agg(
-                        lambda x: x.mode().iloc[0] if not x.mode().empty else None
-                    )
+                #Agrupem horariament, mantenint NaN si no hi ha valors vàlids
+                df_grouped = df.groupby('hour', as_index=False)['value'].mean()
 
                 try:
                     con.execute("DELETE FROM dades WHERE sensor_id = ? AND timestamp >= ?", (sensor_id, limit_date))
-
                     rows_to_insert = [
-                        (sensor_id, row['hour'].isoformat(), None if pd.isna(row['value']) else row['value'])
-                        for _, row in df_grouped.iterrows()
-                    ]
+                            (sensor_id, row['hour'].isoformat(), None if pd.isna(row['value']) else row['value'])
+                            for _, row in df_grouped.iterrows()
+                        ]
                     con.executemany(
                         "INSERT INTO dades (sensor_id, timestamp, value) VALUES (?, ?, ?)", rows_to_insert
                     )
@@ -329,7 +312,8 @@ class SqlDB():
                 except Exception as e:
                     con.rollback()
                     logger.error(f"❌ Error processant {sensor_id}: {e}")
-
+                    
+                        
         logger.info("🧹 NETEJA COMPLETADA")
         self.vacuum()
 
@@ -493,14 +477,17 @@ class SqlDB():
                 latitude = config['latitude'][0]
                 longitude = config['longitude'][0]
 
+                logger.debug(f"Latitude: {latitude}, Longitude: {longitude}")
+
                 return latitude, longitude
             else:
                 logger.error("Could not found the data in the response file")
                 logger.info(f"Available columns: {config.columns.tolist()}")
 
-                return -1
+                return 0.0, 0.0
         except Exception as e:
-            return f"Error! : {str(e)}"
+            logger.error(f"❌ Impossible obtenir ubicació de HA (potser està apagat?): {e}")
+            return 0.0, 0.0
 
     def save_forecast(self, data):
         forecast_name = data[0][0]
