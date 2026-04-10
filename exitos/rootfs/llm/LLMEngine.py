@@ -50,9 +50,30 @@ class LLMEngine:
         )
         self.conversations = {}
         self.tools = {}
+        
+        # Determinar el path base segons on s'executa
+        self.running_in_ha = "HASSIO_TOKEN" in os.environ
+        self.history_file = "share/exitos/chat_history.json" if self.running_in_ha else "chat_history.json"
+        
+        self.load_conversations()
 
         if logger:
             logger.info(f"🔧 LLMEngine inicialitzat | Model: {self.model} | URL: {self.api_url}")
+            
+    def load_conversations(self):
+        try:
+            if os.path.exists(self.history_file):
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    self.conversations = json.load(f)
+        except Exception as e:
+            if logger: logger.error(f"Error carregant historial de chat: {e}")
+
+    def save_conversations(self):
+        try:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(self.conversations, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            if logger: logger.error(f"Error guardant historial de chat: {e}")
 
     def register_tool(self, name, func, description, parameters):
         """
@@ -126,6 +147,7 @@ class LLMEngine:
                 # Si no hi ha eines, hem acabat
                 if not tool_calls:
                     if logger: logger.info(f"💬 Resposta: {content[:80]}{'...' if len(content) > 80 else ''}")
+                    self.save_conversations()
                     return content
                 
                 # Executar eines
@@ -163,7 +185,11 @@ class LLMEngine:
                             "content": f"Error: Tool {fn_name} not found",
                             "name": fn_name
                         })
+            
+            # Al final de la iteració d'eines (si en tenia), guardem la conversa (quan l'assistent ja dona resposta final o no hi ha més eines)
+            # Ho fem a sota abans dels returns.
 
+            self.save_conversations()
             return "⚠️ Límit d'iteracions d'eines superat."
 
         except requests.exceptions.ConnectionError:
@@ -177,6 +203,7 @@ class LLMEngine:
             self.conversations[session_id] = [
                 {"role": "system", "content": self.system_prompt}
             ]
+            self.save_conversations()
             return True
         return False
 
