@@ -46,8 +46,18 @@ network_mode: host
 options:
   ollama_url: "http://192.168.191.70:11434/"
   ollama_model: "llama3.1:latest"
+  mqtt_host: "192.168.191.70"
+  mqtt_port: 8883
+  mqtt_user: "master:exitos_ha_1"
+  mqtt_secret: "oS6iFESM1WR2kTOuqiBYryMc1sXRWkiU"
+  mqtt_asset_id: "5IjwWIZD5hJaGzHX4F5ZAX"
 
 # Schema per validar les opcions
 schema:
   ollama_url: str?
   ollama_model: str?
+  mqtt_host: str?
+  mqtt_port: int?
+  mqtt_user: str?
+  mqtt_secret: str?
+  mqtt_asset_id: str?
