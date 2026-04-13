@@ -1410,8 +1410,8 @@ def push_data_to_exit_server():
         mqtt_host   = "192.168.191.70"
         mqtt_port   = 8883
         mqtt_user   = "master:exitos_ha_1"
-        mqtt_secret = "oS6iFESM1WR2kTOuqiBYryMc1sXRWkiU"
-        asset_id    = "5IjwWIZD5hJaGzHX4F5ZAX"
+        mqtt_secret = "e1YE72h7Y42priXmDG9Y3ZrhprAJ2ZLV"
+        asset_id    = "2ScVx3VqzFwG9PQPq4Q5b4"
 
         if os.path.exists(options_path):
             with open(options_path, 'r') as f:
