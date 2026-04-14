@@ -969,7 +969,7 @@ def optimize(today = False):
 
         price = []
 
-        success, devices_config, price, total_balance_hourly, total_consumers, total_generators = optimalScheduler.start_optimization(
+        success, devices_config, price, total_balance_hourly, total_consumers, total_generators, baseline_consumption = optimalScheduler.start_optimization(
             consumer_id = global_consumer_id,
             generator_id = global_generator_id,
             horizon = horizon,
@@ -977,6 +977,9 @@ def optimize(today = False):
             today = today)
 
         if success:
+            # Calculem el cost base (Sense optimitzar)
+            baseline_price = optimalScheduler.get_baseline_cost()
+
             # GUARDAR A FITXER
             optimization_result = {
                 "timestamps": optimalScheduler.timestamps,
@@ -984,6 +987,8 @@ def optimize(today = False):
                 "total_consumers": total_consumers,
                 "total_generators": total_generators,
                 "total_price": price,
+                "baseline_price": baseline_price,      # Nou: Preu sense optimitzar
+                "baseline_consumption": baseline_consumption, # Nou: Corba base
                 "devices_config": devices_config
             }
 
@@ -1444,6 +1449,9 @@ def push_data_to_exit_server():
         forecast_flex_down = []
         forecast_consumption = []
         forecast_pv_power = []
+        demand_base = []
+        savings_today = 0
+        battery_soc = 0
 
         if os.path.exists(opt_path):
             opt_data = joblib.load(opt_path)
@@ -1465,6 +1473,26 @@ def push_data_to_exit_server():
             if 'total_generators' in opt_data:
                 forecast_pv_power = [float(x) / 1000.0 for x in opt_data['total_generators']]
 
+            # NOVES DADES D'OPTIMITZACIÓ
+            if 'baseline_consumption' in opt_data:
+                demand_base = [float(x) / 1000.0 for x in opt_data['baseline_consumption']]
+            
+            if 'baseline_price' in opt_data and 'total_price' in opt_data:
+                # L'estalvi és la diferència entre el que hauries pagat i el que pagaràs
+                savings_today = float(opt_data['baseline_price']) - float(opt_data['total_price'])
+                if savings_today < 0: savings_today = 0 # Seguretat
+
+        # 2.1 ESTAT DE LES BATERIES (SoC)
+        try:
+            soc_list = []
+            for storage in optimalScheduler.energy_storages.values():
+                if hasattr(storage, 'actual_percentage'):
+                    soc_list.append(float(storage.actual_percentage) * 100) # De 0.6 a 60%
+            if soc_list:
+                battery_soc = sum(soc_list) / len(soc_list)
+        except Exception as e_soc:
+            logger.error(f"⚠️ Error calculant SoC de bateries: {e_soc}")
+
         # 3. Valors a publicar a OpenRemote
         attrs = {
             "pv_power":    float(generation_val)  / 1000.0,
@@ -1482,6 +1510,12 @@ def push_data_to_exit_server():
             attrs["forecast_consumption"] = forecast_consumption
         if len(forecast_pv_power) > 0:
             attrs["forecast_pv_power"] = forecast_pv_power
+            
+        # Atributs per al dashboard d'optimització
+        if len(demand_base) > 0:
+            attrs["demand_base"] = demand_base
+        attrs["savings_today"] = round(savings_today, 2)
+        attrs["battery_soc"] = round(battery_soc, 1)
 
         logger.info(f"📤 Enviant dades a OpenRemote (MQTT {mqtt_host}:{mqtt_port}): {list(attrs.keys())}")
 
