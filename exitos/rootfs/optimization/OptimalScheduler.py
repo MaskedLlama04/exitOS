@@ -86,11 +86,28 @@ class OptimalScheduler:
                 total_generators = []
                 all_devices_config = []
 
-            return has_data, all_devices_config, cost, total_balance, total_consumers, total_generators
+            return has_data, all_devices_config, cost, total_balance, total_consumers, total_generators, self.global_consumer_forecast['forecast_data']
 
         except Exception as e:
             logger.error(f"❌ No s'ha pogut realitzar l'optimització: {e}")
-            return False, None, None, None, None, None
+            return False, None, None, None, None, None, None
+
+
+    def get_baseline_cost(self):
+        """
+        Calcula el cost de la previsió de consum base (Sense cap optimització ni bateries)
+        """
+        if not self.electricity_prices:
+            return 0
+            
+        baseline_price = 0
+        forecast_data = self.global_consumer_forecast['forecast_data']
+        
+        for hour in range(len(forecast_data)):
+            # Sumem el consum base multiplicat pel preu de l'energia en aquell moment
+            baseline_price += forecast_data[hour] * (self.electricity_prices[hour] / 1000)
+            
+        return baseline_price
 
 
     def prepare_data_for_optimization(self):
