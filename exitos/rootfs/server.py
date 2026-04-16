@@ -1396,7 +1396,33 @@ def config_optimized_devices_HA():
                 if device_config['controller_state']:
                     value, sensor_id, sensor_type = item.controla(config = optimization_db['devices_config'][item.name], current_hour = current_hour)
                     database.set_sensor_value_HA(sensor_type, sensor_id, value)
-
+                    
+                    # --- REGISTRE PER AL DASHBOARD D'OPTIMITZACIÓ ---
+                    try:
+                        events_file = os.path.join(forecast.models_filepath, "optimizations/events_log.json")
+                        events = []
+                        if os.path.exists(events_file):
+                            with open(events_file, 'r', encoding='utf-8') as ev_f:
+                                events = json.load(ev_f)
+                                
+                        action_type = "charge" if value > 0 else ("discharge" if value < 0 else "neutral")
+                        action_text = f"Consigna fixada a {value}kW al dispositiu '{item.name}'."
+                        
+                        new_event = {
+                            "time": datetime.now().strftime("AVUI %H:%M"),
+                            "type": action_type,
+                            "text": action_text
+                        }
+                        
+                        events.insert(0, new_event) # Afegir a l'inici
+                        events = events[:10] # Quedar-se només amb els últims 10 events
+                        
+                        with open(events_file, 'w', encoding='utf-8') as ev_f:
+                            json.dump(events, ev_f, ensure_ascii=False)
+                            
+                    except Exception as ev_err:
+                        logger.error(f"⚠️ Error guardant l'historial del setpoint: {ev_err}")
+                    # -----------------------------------------------
 
     except Exception as e:
         logger.error(f"❌ [{datetime.now().strftime('%d:%m:%Y %H:%m')}] -  Error configurant horariament un dispositiu a H.A {e}")
@@ -1516,6 +1542,16 @@ def push_data_to_exit_server():
             attrs["demand_base"] = demand_base
         attrs["savings_today"] = round(savings_today, 2)
         attrs["battery_soc"] = round(battery_soc, 1)
+
+        # Llegim l'historial d'events
+        try:
+            events_file = os.path.join(forecast.models_filepath, "optimizations/events_log.json")
+            if os.path.exists(events_file):
+                with open(events_file, 'r', encoding='utf-8') as ev_f:
+                    events = json.load(ev_f)
+                attrs["optimization_events"] = events
+        except Exception as e_ev:
+            logger.error(f"⚠️ Error llegint events_log per a OpenRemote: {e_ev}")
 
         logger.info(f"📤 Enviant dades a OpenRemote (MQTT {mqtt_host}:{mqtt_port}): {list(attrs.keys())}")
 
