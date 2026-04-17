@@ -17,11 +17,10 @@ REALM = "master"
 CLIENT_ID = "exitos_ha_2"                   # El teu Service User
 CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
 
-SERVICE_ID = "exitos_ha_dashboard"
-SERVICE_LABEL = "Home Assistant"
+SERVICE_ID = "exitos_ha_dashboard_v2"
+SERVICE_LABEL = "Gestor eXiTOS"
 SERVICE_ICON = "mdi-home-assistant"
-HOMEPAGE_URL = "http://192.168.191.252:8123/app/8e15d424_exitos"
-# ============================================
+HOMEPAGE_URL = "http://192.168.191.252:55023"
 
 def get_token():
     url = f"{OPENREMOTE_HOST}/auth/realms/{REALM}/protocol/openid-connect/token"
