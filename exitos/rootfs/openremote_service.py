@@ -20,7 +20,7 @@ CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
 SERVICE_ID = "exitos_ha_dashboard"
 SERVICE_LABEL = "Home Assistant"
 SERVICE_ICON = "mdi-home-assistant"
-HOMEPAGE_URL = "http://192.168.191.252:55023"
+HOMEPAGE_URL = "http://192.168.191.252:8123/app/8e15d424_exitos"
 # ============================================
 
 def get_token():
