@@ -7,6 +7,7 @@ ADD ./rootfs/bottle.py .
 ADD ./rootfs/sqlDB.py .
 ADD ./rootfs/logging_config.py .
 ADD ./rootfs/blockchain.py .
+ADD ./rootfs/openremote_service.py .
 
 #Forecast i Optimizer
 COPY ./rootfs/forecast /forecast/
@@ -25,6 +26,10 @@ COPY ./rootfs/resources/ /resources/
 COPY ./rootfs/llm /llm/
 
 COPY config.yaml config.yaml
+
+# Instal·lem paho-mqtt per a la connexió amb OpenRemote
+RUN pip3 install paho-mqtt || pip3 install paho-mqtt --break-system-packages
+
 
 # posem l'script d'inici i li donem permisos de execucio
 COPY ./rootfs/run.sh /
