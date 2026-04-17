@@ -73,7 +73,7 @@ def send_heartbeat(token, instance_id):
     try:
         response = requests.put(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
-        logger.info("💓 Heartbeat enviat correctament.")
+        logger.debug("💓 Heartbeat enviat correctament.")
         return True
     except Exception as e:
         logger.warning(f"Error al Heartbeat. Intentarem re-registrar el servei: {e}")
