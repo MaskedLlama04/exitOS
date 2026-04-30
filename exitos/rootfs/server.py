@@ -1680,13 +1680,53 @@ def push_data_to_exit_server():
     """Recull dades de consum, generació i flexibilitat i les envia a OpenRemote via MQTT."""
     global consecutive_mqtt_errors
     try:
-        client = mqtt.Client(client_id="exitos_ha_2")
-        client.username_pw_set("master:exitos_ha_2", "mKNn6IXlZYunW3aDalvlulJVIg10VH9t")
+        # Recuperem la configuració de l'usuari (nom, sensors, etc.)
+        user_data = get_user_configuration_data()
+        client_name = CLIENT_ID
+        
+        # Mapping d'atributs cap a OpenRemote (Casa Pol)
+        # El topic segueix l'estructura: {realm}/{client_id}/writeattributevalue/{asset_id}/{attribute_name}
+        # Nota: L'asset_id de 'Casa Pol' l'hem de tenir identificat. 
+        # Si no el tenim, usem el client_name com a fallback o el busquem.
+        asset_id = "2ScVx3VqzFwG9PQPq4Q5b4" # Aquí aniria la ID de Casa Pol
+        
+        client = mqtt.Client(client_id=client_name)
+        client.username_pw_set(f"{REALM}:{client_name}", CLIENT_SECRET)
         client.connect("192.168.191.70", 8883, 60)
         
-        # Exemple de publicació d'atributs (adapteu segons les necessitats)
-        # client.publish("master/exitos_ha_2/writeattributevalue/asset_name/attribute_name", "valor")
+        # Recollim dades actuals (Real-time)
+        consumption = database.get_current_sensor_state(user_data['consumption']) or 0.0
+        generation = database.get_current_sensor_state(user_data['generation']) or 0.0
+        battery_soc = database.get_current_sensor_state("sensor.bateria_soc") or 0.0 # Intentem buscar el de la bateria
         
+        # Enviament de dades reals
+        base_topic = f"{REALM}/{client_name}/writeattributevalue/{asset_id}"
+        client.publish(f"{base_topic}/consumption", consumption)
+        client.publish(f"{base_topic}/pv_power", generation)
+        client.publish(f"{base_topic}/battery_soc", battery_soc)
+        
+        # Dades d'optimització i flexibilitat (Forecasts)
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, f"optimizations/{today}.pkl")
+        if os.path.exists(full_path):
+            opt_data = joblib.load(full_path)
+            
+            # Forecasts (primer valor de l'horitzó de 24h)
+            if 'total_balance' in opt_data:
+                client.publish(f"{base_topic}/forecast_consumption", opt_data['total_balance'][0])
+            
+            if 'total_fup' in opt_data:
+                client.publish(f"{base_topic}/forecast_flex_up", opt_data['total_fup'][0])
+                client.publish(f"{base_topic}/flex_up", opt_data['total_fup'][0]) # També el valor actual
+                
+            if 'total_fdown' in opt_data:
+                client.publish(f"{base_topic}/forecast_flex_down", opt_data['total_fdown'][0])
+                client.publish(f"{base_topic}/flex_down", opt_data['total_fdown'][0])
+
+            # Altres dades si estan disponibles
+            if 'baseline_consumption' in opt_data:
+                client.publish(f"{base_topic}/demand_base", opt_data['baseline_consumption'][0])
+
         client.disconnect()
         
         if consecutive_mqtt_errors > 0:
@@ -1893,3 +1933,4 @@ if __name__ == "__main__":
     schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
 
     main()
+    

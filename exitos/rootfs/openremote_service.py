@@ -38,31 +38,31 @@ def get_token():
         _token_was_connected = False
         return None
 
-def update_remote_status(token):
-    """Envia un heartbeat a OpenRemote per indicar que el servei està actiu."""
-    url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/service/status"
+    # Intentem registrar/actualitzar l'estat del servei a l'asset de la casa
+    asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
+    url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/{asset_id}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    # Intentem registrar/actualitzar l'estat del servei
-    payload = {
-        "id": CLIENT_ID,
-        "name": "Gestor eXiTOS",
-        "type": "Service",
-        "attributes": {
-            "status": {"value": "RUNNING"},
-            "icon": {"value": SERVICE_ICON},
-            "url": {"value": HOMEPAGE_URL}
-        }
-    }
+    # Obtenim l'asset primer per no sobreescriure-ho tot
     try:
-        # Enviem el heartbeat
-        resp = requests.put(url, json=payload, headers=headers, verify=False, timeout=5)
-        return resp.status_code in [200, 201, 204]
+        current_asset_resp = requests.get(url, headers=headers, verify=False, timeout=5)
+        if current_asset_resp.status_code == 200:
+            asset_data = current_asset_resp.json()
+            # Només actualitzem l'atribut d'estat si existeix o el creem
+            if "attributes" not in asset_data:
+                asset_data["attributes"] = {}
+            
+            asset_data["attributes"]["service_status"] = {"value": "RUNNING"}
+            asset_data["attributes"]["last_seen"] = {"value": int(time.time() * 1000)}
+            
+            resp = requests.put(url, json=asset_data, headers=headers, verify=False, timeout=5)
+            return resp.status_code in [200, 204]
     except Exception as e:
-        logger.debug(f"Error enviant heartbeat: {e}")
+        logger.debug(f"Error enviant heartbeat a l'asset: {e}")
         return False
+    return False
 
 def main():
     logger.info("Iniciant el pont de connexió (Service Bridge) cap a OpenRemote...")
