@@ -1682,16 +1682,15 @@ def push_data_to_exit_server():
     try:
         # Recuperem la configuració de l'usuari (nom, sensors, etc.)
         user_data = get_user_configuration_data()
-        client_name = CLIENT_ID
         
-        # Mapping d'atributs cap a OpenRemote (Casa Pol)
-        # El topic segueix l'estructura: {realm}/{client_id}/writeattributevalue/{asset_id}/{attribute_name}
-        # Nota: L'asset_id de 'Casa Pol' l'hem de tenir identificat. 
-        # Si no el tenim, usem el client_name com a fallback o el busquem.
-        asset_id = "2ScVx3VqzFwG9PQPq4Q5b4" # Aquí aniria la ID de Casa Pol
+        # Configuració de la connexió
+        client_name = "exitos_ha_1"
+        realm = "master"
+        password = "e1YE72h7Y42priXmDG9Y3ZrhprAJ2ZLV"
+        asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
         
         client = mqtt.Client(client_id=client_name)
-        client.username_pw_set(f"{REALM}:{client_name}", CLIENT_SECRET)
+        client.username_pw_set(f"{realm}:{client_name}", password)
         client.connect("192.168.191.70", 8883, 60)
         
         # Recollim dades actuals (Real-time)
