@@ -1,8 +1,6 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN python3 -m pip install --no-cache-dir paho-mqtt requests urllib3
-
 #afegim els fitxers del servidor dins el container de docker
 ADD ./rootfs/server.py .
 ADD ./rootfs/openremote_service.py .
