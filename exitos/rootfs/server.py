@@ -1683,10 +1683,10 @@ def push_data_to_exit_server():
         # Recuperem la configuració de l'usuari (nom, sensors, etc.)
         user_data = get_user_configuration_data()
         
-        # Configuració de la connexió
-        client_name = "exitos_ha_1"
+        # Configuració de la connexió (Unificada a exitos_ha_2)
+        client_name = "exitos_ha_2"
         realm = "master"
-        password = "e1YE72h7Y42priXmDG9Y3ZrhprAJ2ZLV"
+        password = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
         asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
         
         # Paho MQTT v2 requereix especificar la versió de la Callback API
@@ -1957,6 +1957,6 @@ if __name__ == "__main__":
 
     # Execució immediata al arrencar per confirmar connexió
     run_threaded(push_data_to_exit_server)
-
+    
     main()
     
