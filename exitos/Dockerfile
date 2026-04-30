@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN pip3 install --no-cache-dir paho-mqtt requests urllib3
+RUN python3 -m pip install --no-cache-dir paho-mqtt requests urllib3
 
 #afegim els fitxers del servidor dins el container de docker
 ADD ./rootfs/server.py .
