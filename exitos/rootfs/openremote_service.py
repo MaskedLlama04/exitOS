@@ -38,6 +38,8 @@ def get_token():
         _token_was_connected = False
         return None
 
+def update_remote_status(token):
+    """Envia un heartbeat a OpenRemote per indicar que el servei està actiu."""
     # Intentem registrar/actualitzar l'estat del servei a l'asset de la casa
     asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
     url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/{asset_id}"
@@ -45,12 +47,11 @@ def get_token():
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    # Obtenim l'asset primer per no sobreescriure-ho tot
+    
     try:
         current_asset_resp = requests.get(url, headers=headers, verify=False, timeout=5)
         if current_asset_resp.status_code == 200:
             asset_data = current_asset_resp.json()
-            # Només actualitzem l'atribut d'estat si existeix o el creem
             if "attributes" not in asset_data:
                 asset_data["attributes"] = {}
             
