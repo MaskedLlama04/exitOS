@@ -34,25 +34,58 @@ def get_token():
             logger.info("✅ Connexió amb OpenRemote establerta correctament.")
             _token_was_connected = True
         return response.json().get("access_token")
-    except Exception as e:
-        # Silenciem els errors constants tal com es va demanar prèviament
+    except Exception:
         _token_was_connected = False
         return None
+
+def update_remote_status(token):
+    """Envia un heartbeat a OpenRemote per indicar que el servei està actiu."""
+    url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/service/status"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    # Intentem registrar/actualitzar l'estat del servei
+    payload = {
+        "id": CLIENT_ID,
+        "name": "Gestor eXiTOS",
+        "type": "Service",
+        "attributes": {
+            "status": {"value": "RUNNING"},
+            "icon": {"value": SERVICE_ICON},
+            "url": {"value": HOMEPAGE_URL}
+        }
+    }
+    try:
+        # Enviem el heartbeat
+        resp = requests.put(url, json=payload, headers=headers, verify=False, timeout=5)
+        return resp.status_code in [200, 201, 204]
+    except Exception as e:
+        logger.debug(f"Error enviant heartbeat: {e}")
+        return False
 
 def main():
     logger.info("Iniciant el pont de connexió (Service Bridge) cap a OpenRemote...")
     retry_wait = 15
-    MAX_RETRY_WAIT = 600  # Màxim 10 minuts d'espera
+    MAX_RETRY_WAIT = 600
     
     while True:
         token = get_token()
         if not token:
-            # Backoff exponencial silenciós
             time.sleep(retry_wait)
             retry_wait = min(retry_wait * 2, MAX_RETRY_WAIT)
-        else:
+            continue
+            
+        # Si tenim token, intentem actualitzar l'estat a OpenRemote
+        success = update_remote_status(token)
+        if success:
             retry_wait = 15
+            # Esperem 30 segons fins al proper heartbeat
             time.sleep(30)
+        else:
+            # Si falla el heartbeat, reintentem segons el backoff
+            time.sleep(retry_wait)
+            retry_wait = min(retry_wait * 2, MAX_RETRY_WAIT)
 
 if __name__ == "__main__":
     main()
