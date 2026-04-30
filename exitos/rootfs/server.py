@@ -1715,11 +1715,11 @@ def push_data_to_exit_server():
         generation = get_val(user_data['generation'])
         battery_soc = get_val("sensor.bateria_soc")
         
-        # Enviament de dades reals
+        # Enviament de dades reals (Corregim majúscules segons la teva imatge)
         base_topic = f"{realm}/{client_name}/writeattributevalue/{asset_id}"
-        client.publish(f"{base_topic}/consumption", consumption)
-        client.publish(f"{base_topic}/pv_power", generation)
-        client.publish(f"{base_topic}/battery_soc", battery_soc)
+        client.publish(f"{base_topic}/Consumption", consumption)
+        client.publish(f"{base_topic}/Pv_power", generation)
+        client.publish(f"{base_topic}/Battery_soc", battery_soc)
         
         # Dades d'optimització i flexibilitat (Forecasts)
         today = datetime.today().strftime("%d_%m_%Y")
@@ -1727,23 +1727,23 @@ def push_data_to_exit_server():
         if os.path.exists(full_path):
             opt_data = joblib.load(full_path)
             
-            # Forecasts (Enviem la llista completa com a JSON per als atributs Number[])
+            # Forecasts (Enviem la llista completa com a JSON)
             if 'total_balance' in opt_data:
-                client.publish(f"{base_topic}/forecast_consumption", json.dumps(opt_data['total_balance']))
+                client.publish(f"{base_topic}/Forecast_consumption", json.dumps(opt_data['total_balance']))
             
             if 'total_fup' in opt_data:
-                client.publish(f"{base_topic}/forecast_flex_up", json.dumps(opt_data['total_fup']))
-                client.publish(f"{base_topic}/flex_up", opt_data['total_fup'][0]) # Valor actual (Number)
+                client.publish(f"{base_topic}/Forecast_flex_up", json.dumps(opt_data['total_fup']))
+                client.publish(f"{base_topic}/Flex_up", opt_data['total_fup'][0])
                 
             if 'total_fdown' in opt_data:
-                client.publish(f"{base_topic}/forecast_flex_down", json.dumps(opt_data['total_fdown']))
-                client.publish(f"{base_topic}/flex_down", opt_data['total_fdown'][0])
+                client.publish(f"{base_topic}/Forecast_flex_down", json.dumps(opt_data['total_fdown']))
+                client.publish(f"{base_topic}/Flex_down", opt_data['total_fdown'][0])
 
             if 'total_generators' in opt_data:
-                client.publish(f"{base_topic}/forecast_pv_power", json.dumps(opt_data['total_generators']))
+                client.publish(f"{base_topic}/Forecast_pv_power", json.dumps(opt_data['total_generators']))
 
             if 'baseline_consumption' in opt_data:
-                client.publish(f"{base_topic}/demand_base", json.dumps(opt_data['baseline_consumption']))
+                client.publish(f"{base_topic}/Demand_base", json.dumps(opt_data['baseline_consumption']))
 
         # Llista d'atributs enviats per al log
         sent_attributes = ['pv_power', 'consumption', 'battery_soc', 'flex_up', 'flex_down', 
