@@ -1,26 +1,32 @@
+import os
 import time
 import requests
 import logging
 import urllib3
 
+# Desactivar els warnings de certificats auto-signats HTTPS
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Configuració del Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("OR-Service-Bridge")
 
 # ======== CREDENCIALS I CONFIGURACIÓ ========
 OPENREMOTE_HOST = "https://192.168.191.70"
 REALM = "master"
-CLIENT_ID = "exitos_ha_2"                   
+CLIENT_ID = "exitos_ha_2"
 CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
+
+SERVICE_ID = "exitos_dashboard"
+SERVICE_LABEL = "Gestor eXiTOS"
 SERVICE_ICON = "mdi-home-assistant"
 HOMEPAGE_URL = "http://192.168.191.252:8123/app/8e15d424_exitos"
 
-# Indicador per saber si ja hem avisat de la pèrdua de connexió (evita spam de logs)
-_token_was_connected = False
+# Variable per reduir logs d'error repetitius
+consecutive_token_errors = 0
 
 def get_token():
-    global _token_was_connected
+    global consecutive_token_errors
     url = f"{OPENREMOTE_HOST}/auth/realms/{REALM}/protocol/openid-connect/token"
     payload = {
         "grant_type": "client_credentials",
@@ -30,107 +36,84 @@ def get_token():
     try:
         response = requests.post(url, data=payload, verify=False, timeout=10)
         response.raise_for_status()
-        if not _token_was_connected:
-            logger.info("✅ Connexió amb OpenRemote establerta correctament.")
-            _token_was_connected = True
+        if consecutive_token_errors > 0:
+            logger.info("✅ S'ha recuperat la connexió amb OpenRemote!")
+            consecutive_token_errors = 0
         return response.json().get("access_token")
-    except Exception:
-        _token_was_connected = False
+    except Exception as e:
+        if consecutive_token_errors == 0:
+            logger.error(f"Error obtenint token d'OpenRemote (revisa credencials o connectivitat): {e}")
+        consecutive_token_errors += 1
+        
+        # Avisar només cada hora (cada 240 intents de 15 segons aprox)
+        if consecutive_token_errors % 240 == 0:
+             logger.error(f"Error persistent obtenint token d'OpenRemote: {e}")
         return None
 
-def update_remote_status(token):
-    """S'assegura que l'asset del Servei existeixi a OpenRemote i l'actualitza perquè surti al menú."""
+def register_service(token):
+    url = f"{OPENREMOTE_HOST}/api/{REALM}/service"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    # 1. Busquem si el servei ja existeix
-    query_url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/query"
-    query_payload = {
-        "assetTypes": ["Service"]
+    payload = {
+        "serviceId": SERVICE_ID,
+        "label": SERVICE_LABEL,
+        "icon": SERVICE_ICON,
+        "homepageUrl": HOMEPAGE_URL,
+        "status": "AVAILABLE"
     }
     
-    service_asset_id = None
     try:
-        query_resp = requests.post(query_url, json=query_payload, headers=headers, verify=False, timeout=5)
-        if query_resp.status_code == 200:
-            assets = query_resp.json()
-            for asset in assets:
-                if asset.get("name") == "Gestor eXiTOS":
-                    service_asset_id = asset.get("id")
-                    break
+        response = requests.post(url, json=payload, headers=headers, verify=False, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        instance_id = data.get("instanceId")
+        logger.info(f"Servei 'Gestor eXiTOS' registrat correctament a OpenRemote! Instance ID: {instance_id}")
+        return instance_id
     except Exception as e:
-        logger.debug(f"Error buscant el servei a OpenRemote: {e}")
+        logger.error(f"Error registrant el servei: {e}")
+        return None
+
+def send_heartbeat(token, instance_id):
+    url = f"{OPENREMOTE_HOST}/api/{REALM}/service/{SERVICE_ID}/{instance_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+    }
+    try:
+        response = requests.put(url, headers=headers, verify=False, timeout=10)
+        response.raise_for_status()
+        logger.debug("💓 Heartbeat enviat correctament.")
+        return True
+    except Exception as e:
+        logger.warning(f"Error al Heartbeat. Intentarem re-registrar el servei: {e}")
         return False
-        
-    # 2. Si no existeix, el creem
-    if not service_asset_id:
-        create_url = f"{OPENREMOTE_HOST}/api/{REALM}/asset"
-        create_payload = {
-            "name": "Gestor eXiTOS",
-            "type": "Service",
-            "attributes": {
-                "url": {"type": "text", "value": HOMEPAGE_URL},
-                "icon": {"type": "text", "value": SERVICE_ICON},
-                "service_status": {"type": "text", "value": "RUNNING"},
-                "last_seen": {"type": "timestamp", "value": int(time.time() * 1000)}
-            }
-        }
-        try:
-            create_resp = requests.post(create_url, json=create_payload, headers=headers, verify=False, timeout=5)
-            if create_resp.status_code in [200, 201]:
-                logger.info("Servei 'Gestor eXiTOS' creat correctament a OpenRemote.")
-                return True
-        except Exception as e:
-            logger.debug(f"Error creant el servei a OpenRemote: {e}")
-            return False
-    else:
-        # 3. Si ja existeix, actualitzem el heartbeat
-        update_url = f"{OPENREMOTE_HOST}/api/{REALM}/asset/{service_asset_id}"
-        try:
-            get_resp = requests.get(update_url, headers=headers, verify=False, timeout=5)
-            if get_resp.status_code == 200:
-                asset_data = get_resp.json()
-                if "attributes" not in asset_data:
-                    asset_data["attributes"] = {}
-                
-                # Assegurem que l'URL és el correcte
-                asset_data["attributes"]["url"] = {"type": "text", "value": HOMEPAGE_URL}
-                asset_data["attributes"]["icon"] = {"type": "text", "value": SERVICE_ICON}
-                asset_data["attributes"]["service_status"] = {"type": "text", "value": "RUNNING"}
-                asset_data["attributes"]["last_seen"] = {"type": "timestamp", "value": int(time.time() * 1000)}
-                
-                put_resp = requests.put(update_url, json=asset_data, headers=headers, verify=False, timeout=5)
-                return put_resp.status_code in [200, 204]
-        except Exception as e:
-            logger.debug(f"Error actualitzant el heartbeat del servei: {e}")
-            return False
-            
-    return False
 
 def main():
     logger.info("Iniciant el pont de connexió (Service Bridge) cap a OpenRemote...")
-    retry_wait = 15
-    MAX_RETRY_WAIT = 600
+    instance_id = None
     
     while True:
-        token = get_token()
-        if not token:
-            time.sleep(retry_wait)
-            retry_wait = min(retry_wait * 2, MAX_RETRY_WAIT)
-            continue
-            
-        # Si tenim token, intentem actualitzar l'estat a OpenRemote
-        success = update_remote_status(token)
-        if success:
-            retry_wait = 15
+        if not instance_id:
+            token = get_token()
+            if token:
+                instance_id = register_service(token)
+                if not instance_id:
+                    time.sleep(15)
+                    continue
+            else:
+                time.sleep(15)
+                continue
+                
+        if instance_id:
             # Esperem 30 segons fins al proper heartbeat
             time.sleep(30)
-        else:
-            # Si falla el heartbeat, reintentem segons el backoff
-            time.sleep(retry_wait)
-            retry_wait = min(retry_wait * 2, MAX_RETRY_WAIT)
+            token = get_token()
+            if not token or not send_heartbeat(token, instance_id):
+                logger.info("S'ha perdut la connexió. Tornarem a registrar el servei en el proper cicle...")
+                instance_id = None
 
 if __name__ == "__main__":
+    # Esperem una mica a que el servidor principal estigui a punt
+    time.sleep(5)
     main()
