@@ -1657,10 +1657,7 @@ def run_threaded(job_func):
     job_thread = threading.Thread(target=job_func)
     job_thread.start()
 
-schedule.every().day.at("23:30").do(run_threaded, daily_task)
-schedule.every().day.at("02:00").do(run_threaded, daily_database_clean)
-schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
-schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
+
 
 def run_scheduled_tasks():
     logger.debug("🗓️ SCHEDULER STARTED")
@@ -1889,5 +1886,10 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"❌ Error inicialitzant LLM: {e}")
 
+    # Configurar programació de tasques
+    schedule.every().day.at("23:30").do(run_threaded, daily_task)
+    schedule.every().day.at("02:00").do(run_threaded, daily_database_clean)
+    schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
+    schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
+
     main()
-    
