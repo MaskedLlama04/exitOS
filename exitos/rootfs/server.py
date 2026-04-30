@@ -1689,17 +1689,34 @@ def push_data_to_exit_server():
         password = "e1YE72h7Y42priXmDG9Y3ZrhprAJ2ZLV"
         asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
         
-        client = mqtt.Client(client_id=client_name)
+        # Paho MQTT v2 requereix especificar la versió de la Callback API
+        try:
+            from paho.mqtt.enums import CallbackAPIVersion
+            client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=client_name)
+        except ImportError:
+            # Fallback per a versions antigues de paho-mqtt
+            client = mqtt.Client(client_id=client_name)
+            
         client.username_pw_set(f"{realm}:{client_name}", password)
         client.connect("192.168.191.70", 8883, 60)
         
-        # Recollim dades actuals (Real-time)
-        consumption = database.get_current_sensor_state(user_data['consumption']) or 0.0
-        generation = database.get_current_sensor_state(user_data['generation']) or 0.0
-        battery_soc = database.get_current_sensor_state("sensor.bateria_soc") or 0.0 # Intentem buscar el de la bateria
+        # Recollim dades actuals (Real-time) forçant que siguin floats
+        def get_val(sensor_id):
+            val = database.get_current_sensor_state(sensor_id)
+            try:
+                # Si és una sèrie de pandas, agafem l'últim valor
+                if hasattr(val, 'iloc'):
+                    return float(val.iloc[-1])
+                return float(val) if val is not None else 0.0
+            except:
+                return 0.0
+
+        consumption = get_val(user_data['consumption'])
+        generation = get_val(user_data['generation'])
+        battery_soc = get_val("sensor.bateria_soc")
         
         # Enviament de dades reals
-        base_topic = f"{REALM}/{client_name}/writeattributevalue/{asset_id}"
+        base_topic = f"{realm}/{client_name}/writeattributevalue/{asset_id}"
         client.publish(f"{base_topic}/consumption", consumption)
         client.publish(f"{base_topic}/pv_power", generation)
         client.publish(f"{base_topic}/battery_soc", battery_soc)
@@ -1710,21 +1727,23 @@ def push_data_to_exit_server():
         if os.path.exists(full_path):
             opt_data = joblib.load(full_path)
             
-            # Forecasts (primer valor de l'horitzó de 24h)
+            # Forecasts (Enviem la llista completa com a JSON per als atributs Number[])
             if 'total_balance' in opt_data:
-                client.publish(f"{base_topic}/forecast_consumption", opt_data['total_balance'][0])
+                client.publish(f"{base_topic}/forecast_consumption", json.dumps(opt_data['total_balance']))
             
             if 'total_fup' in opt_data:
-                client.publish(f"{base_topic}/forecast_flex_up", opt_data['total_fup'][0])
-                client.publish(f"{base_topic}/flex_up", opt_data['total_fup'][0]) # També el valor actual
+                client.publish(f"{base_topic}/forecast_flex_up", json.dumps(opt_data['total_fup']))
+                client.publish(f"{base_topic}/flex_up", opt_data['total_fup'][0]) # Valor actual (Number)
                 
             if 'total_fdown' in opt_data:
-                client.publish(f"{base_topic}/forecast_flex_down", opt_data['total_fdown'][0])
+                client.publish(f"{base_topic}/forecast_flex_down", json.dumps(opt_data['total_fdown']))
                 client.publish(f"{base_topic}/flex_down", opt_data['total_fdown'][0])
 
-            # Altres dades si estan disponibles
+            if 'total_generators' in opt_data:
+                client.publish(f"{base_topic}/forecast_pv_power", json.dumps(opt_data['total_generators']))
+
             if 'baseline_consumption' in opt_data:
-                client.publish(f"{base_topic}/demand_base", opt_data['baseline_consumption'][0])
+                client.publish(f"{base_topic}/demand_base", json.dumps(opt_data['baseline_consumption']))
 
         # Llista d'atributs enviats per al log
         sent_attributes = ['pv_power', 'consumption', 'battery_soc', 'flex_up', 'flex_down', 
@@ -1940,3 +1959,4 @@ if __name__ == "__main__":
     run_threaded(push_data_to_exit_server)
 
     main()
+    
