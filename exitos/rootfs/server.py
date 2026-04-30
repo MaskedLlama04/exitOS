@@ -1727,6 +1727,11 @@ def push_data_to_exit_server():
             if 'baseline_consumption' in opt_data:
                 client.publish(f"{base_topic}/demand_base", opt_data['baseline_consumption'][0])
 
+        # Llista d'atributs enviats per al log
+        sent_attributes = ['pv_power', 'consumption', 'battery_soc', 'flex_up', 'flex_down', 
+                           'forecast_flex_up', 'forecast_flex_down', 'forecast_consumption', 'demand_base']
+        logger.info(f"📤 Enviant dades a OpenRemote (MQTT 192.168.191.70:8883): {sent_attributes}")
+
         client.disconnect()
         
         if consecutive_mqtt_errors > 0:
@@ -1932,5 +1937,7 @@ if __name__ == "__main__":
     schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
     schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
 
+    # Execució immediata al arrencar per confirmar connexió
+    run_threaded(push_data_to_exit_server)
+
     main()
-    
