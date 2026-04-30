@@ -30,6 +30,7 @@ import sqlDB as db
 import blockchain as Blockchain
 import numpy as np
 import llm.LLMEngine as llm_engine
+import paho.mqtt.client as mqtt
 
 #endregion
 
@@ -1659,6 +1660,7 @@ def run_threaded(job_func):
 schedule.every().day.at("23:30").do(run_threaded, daily_task)
 schedule.every().day.at("02:00").do(run_threaded, daily_database_clean)
 schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
+schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
 
 def run_scheduled_tasks():
     logger.debug("🗓️ SCHEDULER STARTED")
@@ -1674,6 +1676,30 @@ scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
 scheduler_thread.start()
 
 #endregion DAILY TASKS
+
+consecutive_mqtt_errors = 0
+
+def push_data_to_exit_server():
+    """Recull dades de consum, generació i flexibilitat i les envia a OpenRemote via MQTT."""
+    global consecutive_mqtt_errors
+    try:
+        client = mqtt.Client(client_id="exitos_ha_2")
+        client.username_pw_set("master:exitos_ha_2", "mKNn6IXlZYunW3aDalvlulJVIg10VH9t")
+        client.connect("192.168.191.70", 8883, 60)
+        
+        # Exemple de publicació d'atributs (adapteu segons les necessitats)
+        # client.publish("master/exitos_ha_2/writeattributevalue/asset_name/attribute_name", "valor")
+        
+        client.disconnect()
+        
+        if consecutive_mqtt_errors > 0:
+            logger.info("✅ Connexió MQTT amb OpenRemote restaurada.")
+            consecutive_mqtt_errors = 0
+            
+    except Exception as e:
+        consecutive_mqtt_errors += 1
+        if consecutive_mqtt_errors == 1:
+            logger.warning(f"⚠️ OpenRemote MQTT no accessible (es reintentarà al proper cicle): {e}")
 
 #region DEBUG REGION
 @app.route('/panik_function')
