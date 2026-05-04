@@ -1174,7 +1174,11 @@ def optimize(today = False):
                 "timestamps": optimalScheduler.timestamps,
                 "total_balance": total_balance_hourly,
                 "total_price": price,
-                "devices_config": devices_config
+                "devices_config": devices_config,
+                # Forecast de generació solar (PV), disponible un cop acabada l'optimització.
+                "total_generators": list(optimalScheduler.global_generator_forecast['forecast_data']),
+                # Forecast de consum base (sense optimitzar). S'usa per a l'atribut Demand_base.
+                "baseline_consumption": list(optimalScheduler.global_consumer_forecast['forecast_data']),
             }
 
             total_fup, total_fdown = flexibility(optimization_result)
