@@ -1698,11 +1698,15 @@ def push_data_to_exit_server():
             client = mqtt.Client(client_id=client_name)
             
         client.username_pw_set(f"{realm}:{client_name}", password)
-        # FIX: Usem el port 1883 (MQTT sense xifrar) per a xarxes locals.
-        # El port 8883 és per a MQTT amb TLS/SSL i requereix configurar certificats
-        # amb client.tls_set(), cosa que no tenim configurada. En xarxa local el
-        # port 1883 és suficient i evita que el servidor rebutgi la connexió.
-        client.connect("192.168.191.70", 1883, 60)
+        
+        # Activem el xifratge TLS/SSL per connectar-nos al port 8883 d'OpenRemote.
+        # El broker MQTT d'OpenRemote espera connexions xifrades en aquest port.
+        client.tls_set()
+        # Li diem que accepti el certificat auto-signat d'OpenRemote sense verificar-lo,
+        # equivalent al 'verify=False' que ja fem a les crides REST del codi.
+        client.tls_insecure_set(True)
+        
+        client.connect("192.168.191.70", 8883, 60)
         
         # FIX: Iniciem el bucle de xarxa en un fil paral·lel (loop_start).
         # Sense això, els publish() de sota només guarden els missatges a la memòria
@@ -1975,3 +1979,4 @@ if __name__ == "__main__":
     run_threaded(push_data_to_exit_server)
 
     main()
+
