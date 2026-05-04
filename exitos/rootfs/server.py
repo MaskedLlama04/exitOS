@@ -1698,7 +1698,17 @@ def push_data_to_exit_server():
             client = mqtt.Client(client_id=client_name)
             
         client.username_pw_set(f"{realm}:{client_name}", password)
-        client.connect("192.168.191.70", 8883, 60)
+        # FIX: Usem el port 1883 (MQTT sense xifrar) per a xarxes locals.
+        # El port 8883 és per a MQTT amb TLS/SSL i requereix configurar certificats
+        # amb client.tls_set(), cosa que no tenim configurada. En xarxa local el
+        # port 1883 és suficient i evita que el servidor rebutgi la connexió.
+        client.connect("192.168.191.70", 1883, 60)
+        
+        # FIX: Iniciem el bucle de xarxa en un fil paral·lel (loop_start).
+        # Sense això, els publish() de sota només guarden els missatges a la memòria
+        # cau del programa però MAI els envien físicament per la xarxa. El loop_start
+        # crea un fil en segon pla que s'encarrega de moure les dades al broker MQTT.
+        client.loop_start()
         
         # Recollim dades actuals (Real-time) forçant que siguin floats
         def get_val(sensor_id):
@@ -1750,6 +1760,12 @@ def push_data_to_exit_server():
                            'forecast_flex_up', 'forecast_flex_down', 'forecast_consumption', 'demand_base']
         logger.info(f"📤 Enviant dades a OpenRemote (MQTT 192.168.191.70:8883): {sent_attributes}")
 
+        # FIX: Esperem 1 segon abans de desconnectar per assegurar que la cua
+        # de missatges s'ha buidat completament cap a OpenRemote. Sense aquesta
+        # pausa, el disconnect() pot arribar a tancar la connexió abans que tots
+        # els publish() anteriors hagin sortit físicament per la xarxa.
+        time.sleep(1)
+        client.loop_stop()
         client.disconnect()
         
         if consecutive_mqtt_errors > 0:
@@ -1959,4 +1975,3 @@ if __name__ == "__main__":
     run_threaded(push_data_to_exit_server)
 
     main()
-    
