@@ -19,7 +19,7 @@ CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
 
 SERVICE_ID = "exitos_dashboard"
 SERVICE_LABEL = "Gestor eXiTOS"
-SERVICE_ICON = "mdi-home-assistant"
+SERVICE_ICON = "mdi-view-dashboard"
 HOMEPAGE_URL = "http://192.168.191.252:55023"
 
 # Variable per reduir logs d'error repetitius
