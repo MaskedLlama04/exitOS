@@ -20,7 +20,7 @@ CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
 SERVICE_ID = "exitos_dashboard"
 SERVICE_LABEL = "Gestor eXiTOS"
 SERVICE_ICON = "mdi-home-assistant"
-HOMEPAGE_URL = "http://192.168.191.252:8123/app/8e15d424_exitos"
+HOMEPAGE_URL = "http://192.168.191.252:55023"
 
 # Variable per reduir logs d'error repetitius
 consecutive_token_errors = 0
@@ -37,7 +37,7 @@ def get_token():
         response = requests.post(url, data=payload, verify=False, timeout=10)
         response.raise_for_status()
         if consecutive_token_errors > 0:
-            logger.info("✅ S'ha recuperat la connexió amb OpenRemote!")
+            logger.info("S'ha recuperat la connexió amb OpenRemote!")
             consecutive_token_errors = 0
         return response.json().get("access_token")
     except Exception as e:
