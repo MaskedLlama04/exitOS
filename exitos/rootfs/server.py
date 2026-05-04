@@ -1701,9 +1701,11 @@ def push_data_to_exit_server():
         
         # Activem el xifratge TLS/SSL per connectar-nos al port 8883 d'OpenRemote.
         # El broker MQTT d'OpenRemote espera connexions xifrades en aquest port.
-        client.tls_set()
-        # Li diem que accepti el certificat auto-signat d'OpenRemote sense verificar-lo,
-        # equivalent al 'verify=False' que ja fem a les crides REST del codi.
+        # Usem cert_reqs=ssl.CERT_NONE per ignorar completament el certificat
+        # auto-signat d'OpenRemote (equivalent al 'verify=False' de les crides REST).
+        # tls_insecure_set(True) desactiva la verificació del hostname (necessari els dos).
+        import ssl
+        client.tls_set(cert_reqs=ssl.CERT_NONE)
         client.tls_insecure_set(True)
         
         client.connect("192.168.191.70", 8883, 60)
@@ -1979,4 +1981,4 @@ if __name__ == "__main__":
     run_threaded(push_data_to_exit_server)
 
     main()
-
+    
