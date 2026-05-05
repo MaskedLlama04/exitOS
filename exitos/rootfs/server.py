@@ -632,6 +632,57 @@ def get_global_flexi_data():
     except Exception as e:
         logger.exception(f"❌ Error obtenint scheduler': {e}")
 
+@app.route('/api/flexibility')
+def api_get_flexibility():
+    """
+    Endpoint per al Gestor de Comunitats. 
+    Retorna les dades de flexibilitat i consum/generació del dia actual en format JSON.
+    """
+    try:
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, "optimizations/"+today+".pkl")
+        
+        if not os.path.exists(full_path):
+            return json.dumps({"status": "error", "message": "No hi ha dades d'optimització per avui"})
+
+        opt_data = joblib.load(full_path)
+        
+        # Convertim dades a llistes per assegurar serialització JSON
+        return json.dumps({
+            "status": "ok",
+            "f_up": list(opt_data.get('total_fup', [])),
+            "f_down": list(opt_data.get('total_fdown', [])),
+            "timestamps": [t.strftime("%Y-%m-%d %H:%M") if hasattr(t, 'strftime') else str(t) for t in opt_data.get('timestamps', [])],
+            "consumption": list(opt_data.get('total_balance', [])),
+            "production": list(opt_data.get('total_generators', [0.0]*24))
+        })
+    except Exception as e:
+        logger.error(f"Error a /api/flexibility: {e}")
+        return json.dumps({"status": "error", "message": str(e)})
+
+@app.route('/api/consigna', method='POST')
+def api_receive_consigna():
+    """
+    Endpoint per rebre ordres (consignes) des del Gestor de Comunitats.
+    """
+    try:
+        data = request.json
+        if not data:
+            return json.dumps({"status": "error", "message": "Dades buides"})
+        
+        order = data.get('order')
+        manager = data.get('manager', 'Desconegut')
+        
+        logger.info(f"📥 ORDRE REBUDA de [{manager}]: {order}")
+        
+        # Aquí és on s'hauria d'implementar la lògica real.
+        # De moment ho loguegem per confirmar que la comunicació és correcta.
+        
+        return json.dumps({"status": "ok", "message": "Ordre rebuda correctament"})
+    except Exception as e:
+        logger.error(f"Error a /api/consigna: {e}")
+        return json.dumps({"status": "error", "message": str(e)})
+
 @app.route('/get_device_config_and_state/<file_name>')
 def get_device_config_and_state(file_name):
     """
@@ -1982,4 +2033,3 @@ if __name__ == "__main__":
     run_threaded(push_data_to_exit_server)
 
     main()
-    
