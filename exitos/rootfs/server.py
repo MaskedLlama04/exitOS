@@ -1786,11 +1786,22 @@ def push_data_to_exit_server():
         generation = get_val(user_data['generation'])
         battery_soc = get_val("sensor.bateria_soc")
         
-        # Enviament de dades reals (Corregim majúscules segons la teva imatge)
-        base_topic = f"{realm}/{client_name}/writeattributevalue/{asset_id}"
-        client.publish(f"{base_topic}/Consumption", consumption)
-        client.publish(f"{base_topic}/Pv_power", generation)
-        client.publish(f"{base_topic}/Battery_soc", battery_soc)
+        # OpenRemote expects: realm/client/writeattributevalue/{attributeName}/{assetId}
+        # Attribute identifiers are case-sensitive; use the exact lower-case names from the asset.
+        base_topic = f"{realm}/{client_name}/writeattributevalue"
+        sent_attributes = []
+
+        def publish_attr(attribute_name, value):
+            result = client.publish(f"{base_topic}/{attribute_name}/{asset_id}", value)
+            result.wait_for_publish(timeout=5)
+            if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                sent_attributes.append(attribute_name)
+            else:
+                logger.warning(f"No s'ha pogut publicar l'atribut MQTT '{attribute_name}' (rc={result.rc})")
+
+        publish_attr("consumption", consumption)
+        publish_attr("pv_power", generation)
+        publish_attr("battery_soc", battery_soc)
         
         # Dades d'optimització i flexibilitat (Forecasts)
         today = datetime.today().strftime("%d_%m_%Y")
@@ -1800,25 +1811,22 @@ def push_data_to_exit_server():
             
             # Forecasts (Enviem la llista completa com a JSON)
             if 'total_balance' in opt_data:
-                client.publish(f"{base_topic}/Forecast_consumption", json.dumps(opt_data['total_balance']))
+                publish_attr("forecast_consumption", json.dumps(opt_data['total_balance']))
             
             if 'total_fup' in opt_data:
-                client.publish(f"{base_topic}/Forecast_flex_up", json.dumps(opt_data['total_fup']))
-                client.publish(f"{base_topic}/Flex_up", opt_data['total_fup'][0])
+                publish_attr("forecast_flex_up", json.dumps(opt_data['total_fup']))
+                publish_attr("flex_up", opt_data['total_fup'][0])
                 
             if 'total_fdown' in opt_data:
-                client.publish(f"{base_topic}/Forecast_flex_down", json.dumps(opt_data['total_fdown']))
-                client.publish(f"{base_topic}/Flex_down", opt_data['total_fdown'][0])
+                publish_attr("forecast_flex_down", json.dumps(opt_data['total_fdown']))
+                publish_attr("flex_down", opt_data['total_fdown'][0])
 
             if 'total_generators' in opt_data:
-                client.publish(f"{base_topic}/Forecast_pv_power", json.dumps(opt_data['total_generators']))
+                publish_attr("forecast_pv_power", json.dumps(opt_data['total_generators']))
 
             if 'baseline_consumption' in opt_data:
-                client.publish(f"{base_topic}/Demand_base", json.dumps(opt_data['baseline_consumption']))
+                publish_attr("demand_base", json.dumps(opt_data['baseline_consumption']))
 
-        # Llista d'atributs enviats per al log
-        sent_attributes = ['pv_power', 'consumption', 'battery_soc', 'flex_up', 'flex_down', 
-                           'forecast_flex_up', 'forecast_flex_down', 'forecast_consumption', 'demand_base']
         logger.info(f"📤 Enviant dades a OpenRemote (MQTT 192.168.191.70:8883): {sent_attributes}")
 
         # FIX: Esperem 1 segon abans de desconnectar per assegurar que la cua
