@@ -653,7 +653,7 @@ def api_get_flexibility():
             "f_up": list(opt_data.get('total_fup', [])),
             "f_down": list(opt_data.get('total_fdown', [])),
             "timestamps": [t.strftime("%Y-%m-%d %H:%M") if hasattr(t, 'strftime') else str(t) for t in opt_data.get('timestamps', [])],
-            "consumption": list(opt_data.get('total_balance', [])),
+            "consumption": list(opt_data.get('baseline_consumption', opt_data.get('total_balance', []))),
             "production": list(opt_data.get('total_generators', [0.0]*24))
         })
     except Exception as e:
@@ -1450,9 +1450,9 @@ def flexibility(optimization_db):
                   list(optimalScheduler.generators.values()) + \
                   list(optimalScheduler.energy_storages.values())
 
-    # Variables per acumular resultats de flexibilitat totals
-    total_fup = optimization_db['total_balance'].copy()
-    total_fdown = optimization_db['total_balance'].copy()
+    # Variables per acumular resultats de flexibilitat totals (inicialitzades a zero)
+    total_fup = [0.0] * len(optimization_db['total_balance'])
+    total_fdown = [0.0] * len(optimization_db['total_balance'])
 
 
     for device in all_devices:
