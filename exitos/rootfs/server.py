@@ -1734,8 +1734,8 @@ def push_data_to_exit_server():
         # Configuració de la connexió (Tornem a exitos_ha_1 per a l'enviament de dades)
         client_name = "exitos_ha_1"
         realm = "master"
-        password = "e1YE72h7Y42priXmDG9Y3ZrhprAJ2ZLV"
-        asset_id = "2ScVx3VqzFwG9PQPq4Q5b4"
+        password = "O0d7c2BUnpRtddiIb9bWiqgbF5Os14DW"
+        asset_id = "2NcsRmHORUTxvJ3YfNrbce"
         
         # Paho MQTT v2 requereix especificar la versió de la Callback API
         try:
@@ -1779,6 +1779,12 @@ def push_data_to_exit_server():
         generation = get_val(user_data['generation'])
         battery_soc = get_val("sensor.bateria_soc")
         
+        # Grid variables
+        grid_power = get_val("sensor.smart_meter_63a_potencia_real")
+        grid_import = max(grid_power, 0.0)
+        grid_export = max(-grid_power, 0.0)
+        net_load = grid_power # Usually net load is equivalent to grid power from smart meter
+        
         # OpenRemote expects: realm/client/writeattributevalue/{attributeName}/{assetId}
         # Attribute identifiers are case-sensitive; use the exact lower-case names from the asset.
         base_topic = f"{realm}/{client_name}/writeattributevalue"
@@ -1795,6 +1801,10 @@ def push_data_to_exit_server():
         publish_attr("consumption", consumption)
         publish_attr("pv_power", generation)
         publish_attr("battery_soc", battery_soc)
+        publish_attr("grid_power", grid_power)
+        publish_attr("grid_import", grid_import)
+        publish_attr("grid_export", grid_export)
+        publish_attr("net_load", net_load)
         
         # Dades d'optimització i flexibilitat (Forecasts)
         today = datetime.today().strftime("%d_%m_%Y")
