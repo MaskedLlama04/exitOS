@@ -14,8 +14,8 @@ logger = logging.getLogger("OR-Service-Bridge")
 # ======== CREDENCIALS I CONFIGURACIÓ ========
 OPENREMOTE_HOST = "https://192.168.191.70"
 REALM = "master"
-CLIENT_ID = "exitos_ha_2"
-CLIENT_SECRET = "mKNn6IXlZYunW3aDalvlulJVIg10VH9t"
+CLIENT_ID = "exitos_ha_1"
+CLIENT_SECRET = "O0d7c2BUnpRtddiIb9bWiqgbF5Os14DW"
 
 SERVICE_ID = "exitos_dashboard"
 SERVICE_LABEL = "Gestor eXiTOS"
