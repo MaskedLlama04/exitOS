@@ -1777,7 +1777,7 @@ def push_data_to_exit_server():
 
         consumption = get_val(user_data['consumption'])
         generation = get_val(user_data['generation'])
-        battery_soc = get_val("sensor.bateria_soc")
+        battery_soc = get_val("sensor.batterij_soc")
         
         # Grid variables
         grid_power = get_val("sensor.smart_meter_63a_potencia_real")
