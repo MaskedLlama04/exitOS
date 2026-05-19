@@ -61,60 +61,65 @@
       <div class="content-section">
         <h1 style="margin-bottom: 15px" data-i18n="config.title">Configuració d'usuari</h1>
 
-        <div class="model-checkbox-div">
-          <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
-            <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
-              placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
-              }}>
-          </label>
+        <div style="display: flex; gap: 2rem; width: 100%; margin-bottom: 25px; flex-wrap: wrap; text-align: left;">
+          <!-- Columna Esquerra: Configuració local -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">Dades de l'Habitatge</h3>
+            <div class="model-checkbox-div">
+              <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
+                <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
+                  placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
+                  }}>
+              </label>
+            </div>
+
+            <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum Global:</span>
+              <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
+                %end
+              </select>
+            </label>
+
+            <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació Global:</span>
+              <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
+                %end
+              </select>
+            </label>
+          </div>
+
+          <!-- Columna Dreta: Connexió OpenRemote -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">Connexió Comunitària (OpenRemote)</h3>
+
+            <label for="openremote-asset-id" class="config-label">
+              <span>ID de l'Actiu (Asset ID):</span>
+              <input class="config-input" type="text" name="openremote-asset-id" id="openremote-asset-id"
+                placeholder="Entra l'Asset ID d'OpenRemote" value="{{user_data.get('openremote_asset_id', '')}}"
+                {{'disabled' if user_data['locked'] else '' }}>
+            </label>
+
+            <label for="openremote-client-name" class="config-label">
+              <span>Client de Connexió (Client ID):</span>
+              <input class="config-input" type="text" name="openremote-client-name" id="openremote-client-name"
+                placeholder="Entra el Client ID de Keycloak" value="{{user_data.get('openremote_client_name', '')}}"
+                {{'disabled' if user_data['locked'] else '' }}>
+            </label>
+
+            <label for="openremote-password" class="config-label">
+              <span>Clau Secreta (Client Secret):</span>
+              <input class="config-input" type="password" name="openremote-password" id="openremote-password"
+                placeholder="Entra el Client Secret de Keycloak" value="{{user_data.get('openremote_password', '')}}"
+                {{'disabled' if user_data['locked'] else '' }}>
+            </label>
+          </div>
         </div>
-
-        <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum
-            Global:</span>
-          <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
-            %end
-          </select>
-        </label>
-
-        <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació
-            Global:</span>
-          <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
-            %end
-          </select>
-        </label>
-
-        <h3
-          style="margin-top: 25px; margin-bottom: 10px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">
-          Connexió Comunitària (OpenRemote)</h3>
-
-        <label for="openremote-asset-id" class="config-label">
-          <span>ID de l'Actiu (Asset ID):</span>
-          <input class="config-input" type="text" name="openremote-asset-id" id="openremote-asset-id"
-            placeholder="Entra l'Asset ID d'OpenRemote" value="{{user_data.get('openremote_asset_id', '')}}"
-            {{'disabled' if user_data['locked'] else '' }}>
-        </label>
-
-        <label for="openremote-client-name" class="config-label">
-          <span>Client de Connexió (Client ID):</span>
-          <input class="config-input" type="text" name="openremote-client-name" id="openremote-client-name"
-            placeholder="Entra el Client ID de Keycloak" value="{{user_data.get('openremote_client_name', '')}}"
-            {{'disabled' if user_data['locked'] else '' }}>
-        </label>
-
-        <label for="openremote-password" class="config-label">
-          <span>Clau Secreta (Client Secret):</span>
-          <input class="config-input" type="password" name="openremote-password" id="openremote-password"
-            placeholder="Entra el Client Secret de Keycloak" value="{{user_data.get('openremote_password', '')}}"
-            {{'disabled' if user_data['locked'] else '' }}>
-        </label>
 
 
         <label for="map" class="config-label" data-i18n="config.location">Localització: </label>
