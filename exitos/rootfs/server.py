@@ -1777,7 +1777,7 @@ def push_data_to_exit_server():
 
         # Substituïm la selecció de l'usuari web pel sensor real que sabem que funciona
         consumption = get_val("sensor.smart_meter_63a_potencia_real")
-        generation = 0.0 # de moment sempre sera 0, pero es podria afegir el nom de la placa solar o alguna cosa aixi
+        generation = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
         battery_soc = get_val("sensor.batterij_soc")
         
         # Grid variables
