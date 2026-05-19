@@ -91,6 +91,27 @@
           </select>
         </label>
 
+        <h3 style="margin-top: 25px; margin-bottom: 10px; color: #005a36; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">Connexió Comunitària (OpenRemote)</h3>
+
+        <label for="openremote-asset-id" class="config-label">
+          <span>ID de l'Actiu (Asset ID):</span>
+          <input class="config-input" type="text" name="openremote-asset-id" id="openremote-asset-id" 
+            placeholder="Entra l'Asset ID d'OpenRemote" value="{{user_data.get('openremote_asset_id', '')}}" {{'disabled' if user_data['locked'] else ''}}>
+        </label>
+
+        <label for="openremote-client-name" class="config-label">
+          <span>Client de Connexió (Client ID):</span>
+          <input class="config-input" type="text" name="openremote-client-name" id="openremote-client-name" 
+            placeholder="Entra el Client ID de Keycloak" value="{{user_data.get('openremote_client_name', '')}}" {{'disabled' if user_data['locked'] else ''}}>
+        </label>
+
+        <label for="openremote-password" class="config-label">
+          <span>Clau Secreta (Client Secret):</span>
+          <input class="config-input" type="password" name="openremote-password" id="openremote-password" 
+            placeholder="Entra el Client Secret de Keycloak" value="{{user_data.get('openremote_password', '')}}" {{'disabled' if user_data['locked'] else ''}}>
+        </label>
+
+
         <label for="map" class="config-label" data-i18n="config.location">Localització: </label>
         <div class="map-container">
           <div id="map"></div>
@@ -164,6 +185,9 @@
     const consumption = document.getElementById('global-consumption').value;
     const generation = document.getElementById('global-generation').value;
     const name = document.getElementById('user-name').value;
+    const openremote_asset_id = document.getElementById('openremote-asset-id').value;
+    const openremote_client_name = document.getElementById('openremote-client-name').value;
+    const openremote_password = document.getElementById('openremote-password').value;
 
 
     fetch('save_config', {
@@ -172,7 +196,10 @@
       body: JSON.stringify({
         consumption: consumption,
         generation: generation,
-        name: name
+        name: name,
+        openremote_asset_id: openremote_asset_id,
+        openremote_client_name: openremote_client_name,
+        openremote_password: openremote_password
       })
     }).then(response => response.text())
       .then(data => console.log('Config saved:', data))
