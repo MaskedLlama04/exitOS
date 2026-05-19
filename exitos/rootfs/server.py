@@ -1070,6 +1070,9 @@ def save_config():
         consumption = data.get('consumption')
         generation = data.get('generation')
         name = data.get('name')
+        openremote_asset_id = data.get('openremote_asset_id', '')
+        openremote_client_name = data.get('openremote_client_name', '')
+        openremote_password = data.get('openremote_password', '')
 
 
         config_dir = forecast.models_filepath + 'config/user.config'
@@ -1092,7 +1095,10 @@ def save_config():
                             'generation': generation,
                             'name' : name,
                             'public_key': claves['public_key'],
-                            'private_key': claves['private_key']}, config_dir)
+                            'private_key': claves['private_key'],
+                            'openremote_asset_id': openremote_asset_id,
+                            'openremote_client_name': openremote_client_name,
+                            'openremote_password': openremote_password}, config_dir)
 
         logger.info(f"Configuració guardada al fitxer {config_dir}")
 
@@ -1158,13 +1164,19 @@ def get_user_configuration_data():
         'consumption': '',
         'generation': '',
         'locked': False,
+        'openremote_asset_id': '',
+        'openremote_client_name': '',
+        'openremote_password': '',
     }
 
     if os.path.exists(config_dir):
         aux = joblib.load(config_dir)
-        user_data['name'] = aux['name']
-        user_data['consumption'] = aux['consumption']
-        user_data['generation'] = aux['generation']
+        user_data['name'] = aux.get('name', '')
+        user_data['consumption'] = aux.get('consumption', '')
+        user_data['generation'] = aux.get('generation', '')
+        user_data['openremote_asset_id'] = aux.get('openremote_asset_id', '')
+        user_data['openremote_client_name'] = aux.get('openremote_client_name', '')
+        user_data['openremote_password'] = aux.get('openremote_password', '')
         user_data['locked'] = True
 
     return user_data
@@ -1731,11 +1743,11 @@ def push_data_to_exit_server():
         # Recuperem la configuració de l'usuari (nom, sensors, etc.)
         user_data = get_user_configuration_data()
         
-        # Configuració de la connexió (Tornem a exitos_ha_1 per a l'enviament de dades)
-        client_name = "exitos_ha_1"
+        # Configuració de la connexió (Obtenció dinàmica o fallback al node original si no està definit)
+        client_name = user_data.get('openremote_client_name') or "exitos_ha_1"
         realm = "master"
-        password = "O0d7c2BUnpRtddiIb9bWiqgbF5Os14DW"
-        asset_id = "2NcsRmHORUTxvJ3YfNrbce"
+        password = user_data.get('openremote_password') or "O0d7c2BUnpRtddiIb9bWiqgbF5Os14DW"
+        asset_id = user_data.get('openremote_asset_id') or "2NcsRmHORUTxvJ3YfNrbce"
         
         # Paho MQTT v2 requereix especificar la versió de la Callback API
         try:
@@ -1758,9 +1770,9 @@ def push_data_to_exit_server():
         
         client.connect("192.168.191.70", 8883, 60)
         
-        # FIX: Iniciem el bucle de xarxa en un fil paral·lel (loop_start).
+        # Iniciem el bucle de xarxa en un fil paral·lel (loop_start).
         # Sense això, els publish() de sota només guarden els missatges a la memòria
-        # cau del programa però MAI els envien físicament per la xarxa. El loop_start
+        # cau del programa però mai els envien físicament per la xarxa. El loop_start
         # crea un fil en segon pla que s'encarrega de moure les dades al broker MQTT.
         client.loop_start()
         
