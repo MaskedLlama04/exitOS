@@ -840,15 +840,16 @@ def graphs_view():
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
-@app.route('/force_update_database')
-def force_update_database():
+@app.route('/force_update_database/<use_clean>')
+def force_update_database(use_clean):
     """
     Actua com a connexió entre en frontend (HTML) i la base de dades,
      cridant al mètode per a actualitzar les dades dels sensors.
     :return: "ok"
     """
+
     database.update_database("all")
-    database.clean_database_hourly_average(all_sensors=True)
+    if use_clean == "true": database.clean_database_hourly_average(all_sensors=True)
     return "ok"
 
 #endregion PÀGINA DATABASE
@@ -1865,10 +1866,10 @@ def push_data_to_exit_server():
 #region DEBUG REGION
 @app.route('/panik_function')
 def panik_function():
-    today_date = datetime.today().strftime('%d-%m-%Y')
-    aux = database.get_data_from_forecast_from_date_and_sensorID(sensor_id='sensor.smart_meter_63a_potencia_real', date=today_date)
-    logger.info(aux)
-    # config_optimized_devices_HA()
+    # today_date = datetime.today().strftime('%d-%m-%Y')
+    # aux = database.get_data_from_forecast_from_date_and_sensorID(sensor_id='sensor.smart_meter_63a_potencia_real', date=today_date)
+    # logger.info(aux)
+    config_optimized_devices_HA()
 
 #endregion DEBUG REGION
 
