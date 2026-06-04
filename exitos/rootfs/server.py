@@ -1988,14 +1988,14 @@ def start_community_mqtt_subscriber():
                     if reason_code == 0:
                         topic = f"exitos/{community_slug}/users/{user_slug}/command"
                         client.subscribe(topic)
-                        logger.info(f"🎧 [FASE 3] Subscrit i escoltant ordres de la comunitat a: {topic}")
+                        logger.info(f"[FASE 3] Subscrit i escoltant ordres de la comunitat a: {topic}")
                     else:
                         logger.warning(f"⚠️ Error al connectar el subscriber MQTT comunitari (rc={reason_code})")
 
                 def on_message(client, userdata, msg):
                     try:
                         payload = json.loads(msg.payload.decode())
-                        logger.info(f"📥 [MQTT COMMAND] Rebuda ordre de la comunitat: {payload}")
+                        logger.info(f"[MQTT COMMAND] Rebuda ordre de la comunitat: {payload}")
                         
                         # Processament d'ordres d'emergència i flexibilitat (Fase 3)
                         command_type = payload.get("type")
