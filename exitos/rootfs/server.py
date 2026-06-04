@@ -1863,6 +1863,171 @@ def push_data_to_exit_server():
         if consecutive_mqtt_errors == 1:
             logger.warning(f"⚠️ OpenRemote MQTT no accessible (es reintentarà al proper cicle): {e}")
 
+    # ── FASE 1: Publicar telemetria consolidada al Broker Mosquitto del Gestor Comunitari ──
+    push_data_to_community_broker()
+
+
+consecutive_community_mqtt_errors = 0
+
+def push_data_to_community_broker():
+    """Envia un JSON consolidat de telemetria al Broker Mosquitto del Gestor Comunitari."""
+    global consecutive_community_mqtt_errors
+    try:
+        user_data = get_user_configuration_data()
+        community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
+        community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
+        community_mqtt_user = user_data.get('community_mqtt_user') or ""
+        community_mqtt_pass = user_data.get('community_mqtt_pass') or ""
+        community_slug = user_data.get('community_slug') or "comunitat_pilot"
+        user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
+
+        try:
+            from paho.mqtt.enums import CallbackAPIVersion
+            client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=f"exitos_{user_slug}")
+        except ImportError:
+            client = mqtt.Client(client_id=f"exitos_{user_slug}")
+
+        if community_mqtt_user:
+            client.username_pw_set(community_mqtt_user, community_mqtt_pass)
+
+        if community_mqtt_port == 8883:
+            import ssl
+            ca_cert = user_data.get('community_mqtt_ca_cert')
+            if ca_cert and os.path.exists(ca_cert):
+                client.tls_set(ca_certs=ca_cert, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+            else:
+                client.tls_set(cert_reqs=ssl.CERT_NONE)
+                client.tls_insecure_set(True)
+
+        client.connect(community_mqtt_host, community_mqtt_port, 60)
+        client.loop_start()
+
+        def get_val(sensor_id):
+            val = database.get_current_sensor_state(sensor_id)
+            try:
+                if hasattr(val, 'iloc'): return float(val.iloc[-1])
+                return float(val) if val is not None else 0.0
+            except: return 0.0
+
+        grid_power = get_val("sensor.smart_meter_63a_potencia_real")
+        generation = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
+        battery_soc = get_val("sensor.batterij_soc")
+
+        telemetry_payload = {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "battery_soc": battery_soc,
+            "consumption": max(grid_power, 0.0),
+            "production": generation,
+            "grid_power": grid_power,
+            "grid_import": max(grid_power, 0.0),
+            "grid_export": max(-grid_power, 0.0),
+            "net_load": grid_power,
+        }
+
+        topic = f"exitos/{community_slug}/users/{user_slug}/telemetry"
+        result = client.publish(topic, json.dumps(telemetry_payload), qos=1)
+        result.wait_for_publish(timeout=5)
+
+        time.sleep(0.5)
+        client.loop_stop()
+        client.disconnect()
+
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            logger.info(f"📤 Telemetria enviada al Gestor Comunitari ({community_mqtt_host}:{community_mqtt_port}) → {topic}")
+            if consecutive_community_mqtt_errors > 0:
+                logger.info("✅ Connexió MQTT amb el Gestor Comunitari restaurada.")
+                consecutive_community_mqtt_errors = 0
+        else:
+            logger.warning(f"⚠️ No s'ha pogut publicar telemetria comunitària (rc={result.rc})")
+
+    except Exception as e:
+        consecutive_community_mqtt_errors += 1
+        if consecutive_community_mqtt_errors == 1:
+            logger.warning(f"⚠️ Gestor Comunitari MQTT no accessible (es reintentarà al proper cicle): {e}")
+
+# ── FASE 3: SUBSCRIBER PER A CONTROL BIDIRECCIONAL ──
+def start_community_mqtt_subscriber():
+    """Inicia un fil en segon pla per escoltar ordres del Gestor Comunitari."""
+    def run_subscriber():
+        while True:
+            try:
+                user_data = get_user_configuration_data()
+                community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
+                community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
+                community_mqtt_user = user_data.get('community_mqtt_user') or ""
+                community_mqtt_pass = user_data.get('community_mqtt_pass') or ""
+                community_slug = user_data.get('community_slug') or "comunitat_pilot"
+                user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
+                
+                if not user_slug or user_slug == "node":
+                    # Espera a que l'usuari configuri el node
+                    time.sleep(60)
+                    continue
+                    
+                client_id = f"exitos_sub_{user_slug}"
+                try:
+                    from paho.mqtt.enums import CallbackAPIVersion
+                    client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=client_id)
+                except ImportError:
+                    client = mqtt.Client(client_id=client_id)
+                    
+                if community_mqtt_user:
+                    client.username_pw_set(community_mqtt_user, community_mqtt_pass)
+                    
+                if community_mqtt_port == 8883:
+                    import ssl
+                    ca_cert = user_data.get('community_mqtt_ca_cert')
+                    if ca_cert and os.path.exists(ca_cert):
+                        client.tls_set(ca_certs=ca_cert, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+                    else:
+                        client.tls_set(cert_reqs=ssl.CERT_NONE)
+                        client.tls_insecure_set(True)
+                
+                # Callbacks MQTT
+                def on_connect(client, userdata, flags, rc):
+                    if rc == 0:
+                        topic = f"exitos/{community_slug}/users/{user_slug}/command"
+                        client.subscribe(topic)
+                        logger.info(f"🎧 [FASE 3] Subscrit i escoltant ordres de la comunitat a: {topic}")
+                    else:
+                        logger.warning(f"⚠️ Error al connectar el subscriber MQTT comunitari (rc={rc})")
+
+                def on_message(client, userdata, msg):
+                    try:
+                        payload = json.loads(msg.payload.decode())
+                        logger.info(f"📥 [MQTT COMMAND] Rebuda ordre de la comunitat: {payload}")
+                        
+                        # Processament d'ordres d'emergència i flexibilitat (Fase 3)
+                        command_type = payload.get("type")
+                        if command_type == "cut_load":
+                            logger.warning("[EMERGÈNCIA] El Gestor Comunitari ha ordenat un TALL de càrrega!")
+                            # TODO: Aquí s'acoblarà amb l'actuador de Home Assistant
+                        elif command_type == "restore_load":
+                            logger.info("[RESTAURACIÓ] El Gestor Comunitari ha ordenat RESTAURAR la càrrega.")
+                            # TODO: Aquí s'acoblarà amb l'actuador de Home Assistant
+                        else:
+                            logger.info(f"Ordre desconeguda: {command_type}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error processant el missatge MQTT comunitari: {e}")
+
+                client.on_connect = on_connect
+                client.on_message = on_message
+                
+                logger.info(f"🔄 Connectant escolta a {community_mqtt_host}:{community_mqtt_port}...")
+                client.connect(community_mqtt_host, community_mqtt_port, 60)
+                
+                # Aquest loop és bloquejant i manté el fil viu escoltant el broker
+                client.loop_forever()
+                
+            except Exception as e:
+                logger.warning(f"⚠️ El Subscriber comunitari ha perdut la connexió ({e}). Reintentant en 60 segons...")
+                time.sleep(60)
+
+    import threading
+    t = threading.Thread(target=run_subscriber, daemon=True, name="MQTT_Community_Subscriber")
+    t.start()
+
 #region DEBUG REGION
 @app.route('/panik_function')
 def panik_function():
@@ -2060,5 +2225,8 @@ if __name__ == "__main__":
 
     # Execució immediata al arrencar per confirmar connexió
     run_threaded(push_data_to_exit_server)
+    
+    # [Fase 3] Iniciem l'escolta contínua de comandaments de la comunitat
+    start_community_mqtt_subscriber()
 
     main()
