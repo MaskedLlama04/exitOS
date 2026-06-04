@@ -1753,7 +1753,7 @@ def push_data_to_exit_server():
         # Paho MQTT v2 requereix especificar la versió de la Callback API
         try:
             from paho.mqtt.enums import CallbackAPIVersion
-            client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=client_name)
+            client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=client_name)
         except ImportError:
             # Fallback per a versions antigues de paho-mqtt
             client = mqtt.Client(client_id=client_name)
@@ -1876,14 +1876,14 @@ def push_data_to_community_broker():
         user_data = get_user_configuration_data()
         community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
         community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
-        community_mqtt_user = user_data.get('community_mqtt_user') or ""
-        community_mqtt_pass = user_data.get('community_mqtt_pass') or ""
+        community_mqtt_user = user_data.get('community_mqtt_user') or "exitos_node"
+        community_mqtt_pass = user_data.get('community_mqtt_pass') or "LaTevaContrasenya"
         community_slug = user_data.get('community_slug') or "comunitat_pilot"
         user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
 
         try:
             from paho.mqtt.enums import CallbackAPIVersion
-            client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=f"exitos_{user_slug}")
+            client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=f"exitos_{user_slug}")
         except ImportError:
             client = mqtt.Client(client_id=f"exitos_{user_slug}")
 
@@ -1954,8 +1954,8 @@ def start_community_mqtt_subscriber():
                 user_data = get_user_configuration_data()
                 community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
                 community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
-                community_mqtt_user = user_data.get('community_mqtt_user') or ""
-                community_mqtt_pass = user_data.get('community_mqtt_pass') or ""
+                community_mqtt_user = user_data.get('community_mqtt_user') or "exitos_node"
+                community_mqtt_pass = user_data.get('community_mqtt_pass') or "LaTevaContrasenya"
                 community_slug = user_data.get('community_slug') or "comunitat_pilot"
                 user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
                 
@@ -1967,7 +1967,7 @@ def start_community_mqtt_subscriber():
                 client_id = f"exitos_sub_{user_slug}"
                 try:
                     from paho.mqtt.enums import CallbackAPIVersion
-                    client = mqtt.Client(CallbackAPIVersion.VERSION1, client_id=client_id)
+                    client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=client_id)
                 except ImportError:
                     client = mqtt.Client(client_id=client_id)
                     
@@ -1984,13 +1984,13 @@ def start_community_mqtt_subscriber():
                         client.tls_insecure_set(True)
                 
                 # Callbacks MQTT
-                def on_connect(client, userdata, flags, rc):
-                    if rc == 0:
+                def on_connect(client, userdata, flags, reason_code, properties=None):
+                    if reason_code == 0:
                         topic = f"exitos/{community_slug}/users/{user_slug}/command"
                         client.subscribe(topic)
                         logger.info(f"🎧 [FASE 3] Subscrit i escoltant ordres de la comunitat a: {topic}")
                     else:
-                        logger.warning(f"⚠️ Error al connectar el subscriber MQTT comunitari (rc={rc})")
+                        logger.warning(f"⚠️ Error al connectar el subscriber MQTT comunitari (rc={reason_code})")
 
                 def on_message(client, userdata, msg):
                     try:
