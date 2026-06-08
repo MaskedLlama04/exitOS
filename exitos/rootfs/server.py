@@ -755,6 +755,10 @@ def update_sensors():
 
     return {"status": "ok", "msg": f"Sensors guardats"}
 
+#endregion PÀGINA DEVICES
+
+#region PÀGINA DATABASE
+
 @app.route('/self_destruct', method='POST')
 def self_destruct_database():
     """
@@ -763,10 +767,6 @@ def self_destruct_database():
     """
     database.self_destruct()
     return {"status": "ok"}
-
-#endregion PÀGINA DEVICES
-
-#region PÀGINA DATABASE
 
 @app.route('/get_graph_info', method='POST')
 def graphs_view():
