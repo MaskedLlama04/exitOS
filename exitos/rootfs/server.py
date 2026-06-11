@@ -423,11 +423,23 @@ def config_page():
     user_location = {'lat': user_lat, 'lon': user_long}
 
     user_data = get_user_configuration_data()
+    
+    # Obtenir la llista de comunitats del Gestor Comunitari per l'auto-registre
+    communities = []
+    try:
+        import requests
+        manager_ip = user_data.get('community_mqtt_host', '192.168.191.70')
+        res = requests.get(f"http://{manager_ip}:58024/api/communities", timeout=2)
+        if res.status_code == 200:
+            communities = res.json().get('communities', [])
+    except Exception as e:
+        logger.warning(f"No s'han pogut obtenir les comunitats: {e}")
 
     return template('./www/config_page.html',
                     sensors = sensors_id,
                     location = user_location,
-                    user_data = user_data)
+                    user_data = user_data,
+                    communities = communities)
 
 @app.route('/optimization')
 def optimization_page():
@@ -1071,10 +1083,8 @@ def save_config():
         consumption = data.get('consumption')
         generation = data.get('generation')
         name = data.get('name')
-        openremote_asset_id = data.get('openremote_asset_id', '')
-        openremote_client_name = data.get('openremote_client_name', '')
-        openremote_password = data.get('openremote_password', '')
-
+        community_id = data.get('community_id', 1)
+        manager_ip = data.get('manager_ip', '192.168.191.70')
 
         config_dir = forecast.models_filepath + 'config/user.config'
         os.makedirs(forecast.models_filepath + 'config', exist_ok=True)
@@ -1089,17 +1099,31 @@ def save_config():
         res_add_user = blockchain.registrar_usuario(claves['public_key'], claves['private_key'])
         logger.debug(f"res_add_user: {res_add_user}")
 
-
-
+        # Fer petició al Gestor Comunitari per l'auto-registre
+        mqtt_slug = name.strip().lower().replace(" ", "_")
+        try:
+            import requests
+            url = f"http://{manager_ip}:58024/api/community/register_node"
+            payload = {"username": name, "community_id": community_id}
+            res = requests.post(url, json=payload, timeout=5)
+            if res.status_code == 200:
+                manager_data = res.json()
+                if manager_data.get('mqtt_slug'):
+                    mqtt_slug = manager_data.get('mqtt_slug')
+                logger.info("✅ Registre a la comunitat realitzat amb èxit!")
+            else:
+                logger.warning(f"Error registrant a la comunitat (HTTP {res.status_code}): {res.text}")
+        except Exception as e:
+            logger.warning(f"No s'ha pogut connectar amb el Gestor Comunitari ({manager_ip}): {e}")
 
         joblib.dump({ 'consumption': consumption,
                             'generation': generation,
                             'name' : name,
                             'public_key': claves['public_key'],
                             'private_key': claves['private_key'],
-                            'openremote_asset_id': openremote_asset_id,
-                            'openremote_client_name': openremote_client_name,
-                            'openremote_password': openremote_password}, config_dir)
+                            'mqtt_slug': mqtt_slug,
+                            'community_id': community_id,
+                            'community_mqtt_host': manager_ip}, config_dir)
 
         logger.info(f"Configuració guardada al fitxer {config_dir}")
 
