@@ -94,30 +94,31 @@
             </label>
           </div>
 
-          <!-- Columna Dreta: Connexió OpenRemote -->
+          <!-- Columna Dreta: Comunitat Energètica -->
           <div style="flex: 1; min-width: 300px;">
-            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">Connexió Comunitària (OpenRemote)</h3>
-
-            <label for="openremote-asset-id" class="config-label">
-              <span>ID de l'Actiu (Asset ID):</span>
-              <input class="config-input" type="text" name="openremote-asset-id" id="openremote-asset-id"
-                placeholder="Entra l'Asset ID d'OpenRemote" value="{{user_data.get('openremote_asset_id', '')}}"
-                {{'disabled' if user_data['locked'] else '' }}>
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;" data-i18n="config.community_title">Comunitat Energètica</h3>
+            
+            <label for="community-id" class="config-label"> <span data-i18n="config.community_label">Comunitat:</span>
+              <select class="config-input" name="community-id" id="community-id" {{'disabled' if user_data.get('locked') else '' }}>
+                %if defined('communities') and communities:
+                  %for community in communities:
+                  <option value="{{community['id']}}" {{'selected' if community['id']==user_data.get('community_id', 1) else '' }}>{{community['name']}}</option>
+                  %end
+                %else:
+                  <option value="1">Comunitat Pilot</option>
+                %end
+              </select>
             </label>
+            <small style="display:block; margin-top:-5px; margin-bottom:15px; color:#666;" data-i18n="config.community_desc">Selecciona a quina comunitat et vols unir.</small>
 
-            <label for="openremote-client-name" class="config-label">
-              <span>Client de Connexió (Client ID):</span>
-              <input class="config-input" type="text" name="openremote-client-name" id="openremote-client-name"
-                placeholder="Entra el Client ID de Keycloak" value="{{user_data.get('openremote_client_name', '')}}"
-                {{'disabled' if user_data['locked'] else '' }}>
+            <label for="manager-ip" class="config-label">
+              <span data-i18n="config.manager_ip">Host del Gestor:</span>
+              <input class="config-input" type="text" name="manager-ip" id="manager-ip"
+                placeholder="Ex: 192.168.191.70" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}"
+                {{'disabled' if user_data.get('locked') else '' }}>
             </label>
+            <small style="display:block; margin-top:-5px; color:#666;" data-i18n="config.manager_ip_desc">La IP o adreça del Gestor Central de la Comunitat.</small>
 
-            <label for="openremote-password" class="config-label">
-              <span>Clau Secreta (Client Secret):</span>
-              <input class="config-input" type="password" name="openremote-password" id="openremote-password"
-                placeholder="Entra el Client Secret de Keycloak" value="{{user_data.get('openremote_password', '')}}"
-                {{'disabled' if user_data['locked'] else '' }}>
-            </label>
           </div>
         </div>
 
@@ -195,9 +196,8 @@
     const consumption = document.getElementById('global-consumption').value;
     const generation = document.getElementById('global-generation').value;
     const name = document.getElementById('user-name').value;
-    const openremote_asset_id = document.getElementById('openremote-asset-id').value;
-    const openremote_client_name = document.getElementById('openremote-client-name').value;
-    const openremote_password = document.getElementById('openremote-password').value;
+    const community_id = parseInt(document.getElementById('community-id').value || 1);
+    const manager_ip = document.getElementById('manager-ip').value;
 
 
     fetch('save_config', {
@@ -207,9 +207,8 @@
         consumption: consumption,
         generation: generation,
         name: name,
-        openremote_asset_id: openremote_asset_id,
-        openremote_client_name: openremote_client_name,
-        openremote_password: openremote_password
+        community_id: community_id,
+        manager_ip: manager_ip
       })
     }).then(response => response.text())
       .then(data => console.log('Config saved:', data))
