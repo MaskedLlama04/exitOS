@@ -1087,22 +1087,8 @@ def save_config():
         res_add_user = blockchain.registrar_usuario(claves['public_key'], claves['private_key'])
         logger.debug(f"res_add_user: {res_add_user}")
 
-        # Fer petició al Gestor Comunitari per l'auto-registre
+        # Guardem la configuració primer sense esperar el gestor
         mqtt_slug = name.strip().lower().replace(" ", "_")
-        try:
-            import requests
-            url = f"http://{manager_ip}:58024/api/community/register_node"
-            payload = {"username": name, "community_id": community_id}
-            res = requests.post(url, json=payload, timeout=5)
-            if res.status_code == 200:
-                manager_data = res.json()
-                if manager_data.get('mqtt_slug'):
-                    mqtt_slug = manager_data.get('mqtt_slug')
-                logger.info("✅ Registre a la comunitat realitzat amb èxit!")
-            else:
-                logger.warning(f"Error registrant a la comunitat (HTTP {res.status_code}): {res.text}")
-        except Exception as e:
-            logger.warning(f"No s'ha pogut connectar amb el Gestor Comunitari ({manager_ip}): {e}")
 
         joblib.dump({ 'consumption': consumption,
                             'generation': generation,
@@ -1114,6 +1100,29 @@ def save_config():
                             'community_mqtt_host': manager_ip}, config_dir)
 
         logger.info(f"Configuració guardada al fitxer {config_dir}")
+
+        # Registre al Gestor Comunitari en segon pla (no bloqueja l'usuari)
+        def _register_in_background():
+            try:
+                import requests as _req
+                url = f"http://{manager_ip}:58024/api/community/register_node"
+                payload = {"username": name, "community_id": community_id}
+                res = _req.post(url, json=payload, timeout=5)
+                if res.status_code == 200:
+                    manager_data = res.json()
+                    confirmed_slug = manager_data.get('mqtt_slug', mqtt_slug)
+                    # Actualitzem el config guardat amb l'slug confirmat pel gestor
+                    if confirmed_slug and confirmed_slug != mqtt_slug:
+                        saved = joblib.load(config_dir)
+                        saved['mqtt_slug'] = confirmed_slug
+                        joblib.dump(saved, config_dir)
+                    logger.info("✅ Registre a la comunitat confirmat pel Gestor!")
+                else:
+                    logger.warning(f"⚠️ Gestor resposta inesperable (HTTP {res.status_code}). El node funcionarà amb slug local.")
+            except Exception as e:
+                logger.warning(f"⚠️ Gestor Comunitari no accessible ara ({manager_ip}). El node funciona amb configuració local.")
+
+        threading.Thread(target=_register_in_background, daemon=True, name="CommunityRegister").start()
 
         certificate_hourly_task()
         return "OK"
@@ -1618,7 +1627,7 @@ def certificate_hourly_task():
             public_key = aux['public_key']
             private_key = aux['private_key']
 
-            now = datetime.now()
+            now = datetime.now(tzlocal.get_localzone())
 
 
             if  database.get_sensor_active(generation) == 1 and generation != "None":
@@ -2026,7 +2035,7 @@ def start_community_mqtt_subscriber():
                 client.on_connect = on_connect
                 client.on_message = on_message
                 
-                logger.info(f"🔄 Connectant escolta a {community_mqtt_host}:{community_mqtt_port}...")
+                logger.info(f"Connectant escolta a {community_mqtt_host}:{community_mqtt_port}...")
                 client.connect(community_mqtt_host, community_mqtt_port, 60)
                 
                 # Aquest loop és bloquejant i manté el fil viu escoltant el broker
