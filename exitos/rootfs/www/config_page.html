@@ -97,27 +97,29 @@
           <!-- Columna Dreta: Comunitat Energètica -->
           <div style="flex: 1; min-width: 300px;">
             <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;" data-i18n="config.community_title">Comunitat Energètica</h3>
-            
-            <label for="community-id" class="config-label"> <span data-i18n="config.community_label">Comunitat:</span>
-              <select class="config-input" name="community-id" id="community-id" {{'disabled' if user_data.get('locked') else '' }}>
-                %if defined('communities') and communities:
-                  %for community in communities:
-                  <option value="{{community['id']}}" {{'selected' if community['id']==user_data.get('community_id', 1) else '' }}>{{community['name']}}</option>
-                  %end
-                %else:
-                  <option value="1">Comunitat Pilot</option>
-                %end
-              </select>
-            </label>
-            <small style="display:block; margin-top:-5px; margin-bottom:15px; color:#666;" data-i18n="config.community_desc">Selecciona a quina comunitat et vols unir.</small>
 
             <label for="manager-ip" class="config-label">
               <span data-i18n="config.manager_ip">Host del Gestor:</span>
-              <input class="config-input" type="text" name="manager-ip" id="manager-ip"
-                placeholder="Ex: 192.168.191.70" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}"
-                {{'disabled' if user_data.get('locked') else '' }}>
+              <div style="display:flex; gap: 6px;">
+                <input class="config-input" type="text" name="manager-ip" id="manager-ip"
+                  placeholder="Ex: 192.168.191.70" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}"
+                  {{'disabled' if user_data.get('locked') else '' }}
+                  style="flex:1;"
+                  oninput="debouncedLoadCommunities()">
+                <button type="button" id="reload-communities-btn" onclick="loadCommunities()"
+                  style="padding: 0 10px; border-radius:6px; border:1px solid #ccc; background:#f5f5f5; cursor:pointer;"
+                  title="Recarregar comunitats" {{'disabled' if user_data.get('locked') else '' }}>&#x21bb;</button>
+              </div>
             </label>
-            <small style="display:block; margin-top:-5px; color:#666;" data-i18n="config.manager_ip_desc">La IP o adreça del Gestor Central de la Comunitat.</small>
+            <small style="display:block; margin-top:-5px; margin-bottom:12px; color:#666;" data-i18n="config.manager_ip_desc">La IP o adreça del Gestor Central de la Comunitat.</small>
+
+            <label for="community-id" class="config-label"> <span data-i18n="config.community_label">Comunitat:</span>
+              <select class="config-input" name="community-id" id="community-id" {{'disabled' if user_data.get('locked') else '' }}>
+                <!-- S'omple asincronament. Valor per defecte guardat: -->
+                <option value="{{user_data.get('community_id', 1)}}">Carregant comunitats...</option>
+              </select>
+            </label>
+            <small id="community-status" style="display:block; margin-top:-5px; margin-bottom:15px; color:#666;">Connectant amb el gestor...</small>
 
           </div>
         </div>
@@ -276,6 +278,59 @@
 
   // get_res_certify_data(); // Eliminate manual call, i18n.js will trigger it via onLanguageChange callback
   lockButtons();
+
+  // ======= CÀRREGA ASINCRONA DE COMUNITATS =======
+  const SAVED_COMMUNITY_ID = {{ user_data.get('community_id', 1) }};
+  const IS_LOCKED = {{ 'true' if user_data.get('locked') else 'false' }};
+  let _debounceTimer = null;
+
+  function debouncedLoadCommunities() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(loadCommunities, 800);
+  }
+
+  function loadCommunities() {
+    if (IS_LOCKED) return;
+    const managerIp = document.getElementById('manager-ip').value.trim();
+    if (!managerIp) return;
+
+    const select = document.getElementById('community-id');
+    const status = document.getElementById('community-status');
+    select.innerHTML = '<option value="">Carregant...</option>';
+    status.textContent = 'Connectant amb el gestor...';
+    status.style.color = '#888';
+
+    fetch(`http://${managerIp}:58024/api/communities`, { signal: AbortSignal.timeout(4000) })
+      .then(r => r.json())
+      .then(data => {
+        const communities = data.communities || [];
+        select.innerHTML = '';
+        if (communities.length === 0) {
+          select.innerHTML = '<option value="1">Comunitat Pilot (per defecte)</option>';
+          status.textContent = 'Cap comunitat trobada al gestor.';
+          status.style.color = '#f59e0b';
+        } else {
+          communities.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            if (c.id === SAVED_COMMUNITY_ID) opt.selected = true;
+            select.appendChild(opt);
+          });
+          status.textContent = `${communities.length} comunitat(s) disponible(s).`;
+          status.style.color = '#16a34a';
+        }
+      })
+      .catch(() => {
+        // Si no es pot connectar, posem el valor guardat i avisem
+        select.innerHTML = `<option value="${SAVED_COMMUNITY_ID}" selected>Comunitat guardada (ID: ${SAVED_COMMUNITY_ID})</option>`;
+        status.textContent = 'Gestor no accessible. Es farà servir la comunitat guardada.';
+        status.style.color = '#dc2626';
+      });
+  }
+
+  // Carrega inicial en segon pla (no bloqueja la pàgina)
+  loadCommunities();
 
   // Reload certificates when language changes
   I18n.onLanguageChange(function (newLocale) {
