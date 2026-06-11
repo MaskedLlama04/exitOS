@@ -423,23 +423,11 @@ def config_page():
     user_location = {'lat': user_lat, 'lon': user_long}
 
     user_data = get_user_configuration_data()
-    
-    # Obtenir la llista de comunitats del Gestor Comunitari per l'auto-registre
-    communities = []
-    try:
-        import requests
-        manager_ip = user_data.get('community_mqtt_host', '192.168.191.70')
-        res = requests.get(f"http://{manager_ip}:58024/api/communities", timeout=2)
-        if res.status_code == 200:
-            communities = res.json().get('communities', [])
-    except Exception as e:
-        logger.warning(f"No s'han pogut obtenir les comunitats: {e}")
 
     return template('./www/config_page.html',
                     sensors = sensors_id,
                     location = user_location,
-                    user_data = user_data,
-                    communities = communities)
+                    user_data = user_data)
 
 @app.route('/optimization')
 def optimization_page():
