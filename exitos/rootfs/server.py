@@ -1627,14 +1627,18 @@ def certificate_hourly_task():
             public_key = aux['public_key']
             private_key = aux['private_key']
 
-            now = datetime.now(tzlocal.get_localzone())
-
+            # Usem datetime sense timezone per consistència amb els timestamps de pandas/BD
+            now = datetime.now()
 
             if  database.get_sensor_active(generation) == 1 and generation != "None":
                 database.update_database(generation)
                 database.clean_database_hourly_average(sensor_id=generation, all_sensors=False)
                 generation_data = database.get_latest_data_from_sensor(sensor_id=generation)
-                generation_timestamp = to_datetime(generation_data[0]).strftime("%Y-%m-%d %H:%M")
+                # Eliminem la timezone si n'hi ha (per evitar comparacions mixtes)
+                generation_ts = to_datetime(generation_data[0])
+                if hasattr(generation_ts, 'tzinfo') and generation_ts.tzinfo is not None:
+                    generation_ts = generation_ts.tz_localize(None)
+                generation_timestamp = generation_ts.strftime("%Y-%m-%d %H:%M")
                 generation_value = generation_data[1]
             else:
                 logger.warning(f"⚠️ Recorda seleccionar el sensor de Generació i marcar-lo a l'apartat 'Sensors' per a guardar.")
@@ -1645,7 +1649,11 @@ def certificate_hourly_task():
                 database.update_database(consumption)
                 database.clean_database_hourly_average(sensor_id=consumption, all_sensors=False)
                 consumption_data = database.get_latest_data_from_sensor(sensor_id=consumption)
-                consumption_timestamp = to_datetime(consumption_data[0]).strftime("%Y-%m-%d %H:%M")
+                # Eliminem la timezone si n'hi ha (per evitar comparacions mixtes)
+                consumption_ts = to_datetime(consumption_data[0])
+                if hasattr(consumption_ts, 'tzinfo') and consumption_ts.tzinfo is not None:
+                    consumption_ts = consumption_ts.tz_localize(None)
+                consumption_timestamp = consumption_ts.strftime("%Y-%m-%d %H:%M")
                 consumption_value = consumption_data[1]
             else:
                 logger.warning(f"⚠️ Recorda seleccionar el sensor de Consum i marcar-lo a l'apartat 'Sensors' per a guardar.")
