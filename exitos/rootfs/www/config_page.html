@@ -98,20 +98,8 @@
           <div style="flex: 1; min-width: 300px;">
             <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;" data-i18n="config.community_title">Comunitat Energètica</h3>
 
-            <label for="manager-ip" class="config-label">
-              <span data-i18n="config.manager_ip">Host del Gestor:</span>
-              <div style="display:flex; gap: 6px;">
-                <input class="config-input" type="text" name="manager-ip" id="manager-ip"
-                  placeholder="Ex: 192.168.191.70" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}"
-                  {{'disabled' if user_data.get('locked') else '' }}
-                  style="flex:1;"
-                  oninput="debouncedLoadCommunities()">
-                <button type="button" id="reload-communities-btn" onclick="loadCommunities()"
-                  style="padding: 0 10px; border-radius:6px; border:1px solid #ccc; background:#f5f5f5; cursor:pointer;"
-                  title="Recarregar comunitats" {{'disabled' if user_data.get('locked') else '' }}>&#x21bb;</button>
-              </div>
-            </label>
-            <small style="display:block; margin-top:-5px; margin-bottom:12px; color:#666;" data-i18n="config.manager_ip_desc">La IP o adreça del Gestor Central de la Comunitat.</small>
+            <!-- Amaguem l'input de la IP. L'usuari només triarà la comunitat, i la IP s'auto-completarà internament. -->
+            <input type="hidden" name="manager-ip" id="manager-ip" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}">
 
             <label for="community-id" class="config-label"> <span data-i18n="config.community_label">Comunitat:</span>
               <select class="config-input" name="community-id" id="community-id" {{'disabled' if user_data.get('locked') else '' }}>
@@ -291,16 +279,16 @@
 
   function loadCommunities() {
     if (IS_LOCKED) return;
-    const managerIp = document.getElementById('manager-ip').value.trim();
-    if (!managerIp) return;
+    const centralManagerIp = '192.168.191.70'; // El servidor central on consultar les comunitats globals
+    const managerIpInput = document.getElementById('manager-ip');
 
     const select = document.getElementById('community-id');
     const status = document.getElementById('community-status');
     select.innerHTML = '<option value="">Carregant...</option>';
-    status.textContent = 'Connectant amb el gestor...';
+    status.textContent = 'Connectant amb el gestor central...';
     status.style.color = '#888';
 
-    fetch(`http://${managerIp}:58024/api/communities`, { signal: AbortSignal.timeout(4000) })
+    fetch(`http://${centralManagerIp}:58024/api/communities`, { signal: AbortSignal.timeout(4000) })
       .then(r => r.json())
       .then(data => {
         const communities = data.communities || [];
@@ -314,9 +302,21 @@
             const opt = document.createElement('option');
             opt.value = c.id;
             opt.textContent = c.name;
+            opt.dataset.ip = c.ip || centralManagerIp;
             if (c.id === SAVED_COMMUNITY_ID) opt.selected = true;
             select.appendChild(opt);
           });
+          
+          // Actualitza la IP automàticament en canviar
+          select.addEventListener('change', function() {
+            const selectedOpt = this.options[this.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.ip) {
+              managerIpInput.value = selectedOpt.dataset.ip;
+            }
+          });
+          // Força el disparador inicial si ja n'hi ha un de seleccionat
+          select.dispatchEvent(new Event('change'));
+
           status.textContent = `${communities.length} comunitat(s) disponible(s).`;
           status.style.color = '#16a34a';
         }
