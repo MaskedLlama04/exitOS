@@ -1058,6 +1058,26 @@ def get_forecast_data(model_name):
 
 #endregion PÀGINA MODEL
 
+@app.route('/api/proxy/communities')
+def proxy_communities():
+    """
+    Fa de pont (proxy) perquè el frontend d'eXiTOS no tingui problemes de CORS
+    al consultar el Gestor Comunitari Central.
+    """
+    response.content_type = 'application/json'
+    try:
+        import requests
+        central_manager_ip = "192.168.191.70"
+        url = f"http://{central_manager_ip}:8024/api/communities"
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            return res.text # Retorna directament el JSON del gestor
+        else:
+            return json.dumps({"error": f"HTTP {res.status_code}"})
+    except Exception as e:
+        logger.error(f"Error de xarxa al proxy de comunitats: {e}")
+        return json.dumps({"error": str(e)})
+
 #region PÀGINA CONFIGURACIÓ
 @app.post('/save_config')
 def save_config():
@@ -1105,7 +1125,7 @@ def save_config():
         def _register_in_background():
             try:
                 import requests as _req
-                url = f"http://{manager_ip}:58024/api/community/register_node"
+                url = f"http://{manager_ip}:8024/api/community/register_node"
                 payload = {"username": name, "community_id": community_id}
                 res = _req.post(url, json=payload, timeout=5)
                 if res.status_code == 200:
