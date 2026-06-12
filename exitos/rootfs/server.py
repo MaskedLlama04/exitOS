@@ -2005,19 +2005,19 @@ def push_data_to_community_broker():
                 return float(val) if val is not None else 0.0
             except: return 0.0
 
-        grid_power = get_val("sensor.smart_meter_63a_potencia_real")
-        generation = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
+        grid_import_val = get_val(user_data.get('consumption')) if user_data.get('consumption') and user_data.get('consumption') != 'None' else 0.0
+        grid_export_val = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
         battery_soc = get_val("sensor.batterij_soc")
 
         telemetry_payload = {
             "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "battery_soc": battery_soc,
-            "consumption": max(grid_power, 0.0),
-            "production": generation,
-            "grid_power": grid_power,
-            "grid_import": max(grid_power, 0.0),
-            "grid_export": max(-grid_power, 0.0),
-            "net_load": grid_power,
+            "consumption": grid_import_val,
+            "production": grid_export_val,
+            "grid_power": grid_import_val - grid_export_val,
+            "grid_import": grid_import_val,
+            "grid_export": grid_export_val,
+            "net_load": grid_import_val - grid_export_val,
         }
 
         topic = f"exitos/{community_slug}/users/{user_slug}/telemetry"
