@@ -1124,16 +1124,52 @@ def save_config():
         # Registre al Gestor Comunitari en segon pla (no bloqueja l'usuari)
         def _register_in_background():
             try:
-                import socket
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                # Obtenim la IP real de la Raspberry a través del Supervisor de HA de forma dinàmica
+                my_ip = None
                 try:
-                    # No fa falta que el port estigui obert en UDP, això només resol la ruta
-                    s.connect((manager_ip, 8024))
-                    my_ip = s.getsockname()[0]
-                except Exception:
-                    my_ip = "127.0.0.1"
-                finally:
-                    s.close()
+                    import os, requests, ipaddress
+                    token = os.environ.get('SUPERVISOR_TOKEN')
+                    if token:
+                        res = requests.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {token}"}, timeout=2)
+                        if res.status_code == 200:
+                            data = res.json()
+                            manager_addr = ipaddress.ip_address(manager_ip)
+                            
+                            # 1. Busquem l'adreça de la Raspberry que comparteixi subxarxa amb el gestor
+                            for iface in data.get("data", {}).get("interfaces", []):
+                                for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                                    try:
+                                        network = ipaddress.ip_network(ip_cidr, strict=False)
+                                        if manager_addr in network:
+                                            my_ip = ip_cidr.split('/')[0]
+                                            break
+                                    except:
+                                        pass
+                                if my_ip: break
+                            
+                            # 2. Si no la troba, agafem qualsevol IP de la Raspberry que no sigui Docker (172.x) ni localhost
+                            if not my_ip:
+                                for iface in data.get("data", {}).get("interfaces", []):
+                                    for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                                        ip = ip_cidr.split('/')[0]
+                                        if ip != "127.0.0.1" and not ip.startswith("172."):
+                                            my_ip = ip
+                                            break
+                                    if my_ip: break
+                except Exception as e:
+                    logger.warning(f"Error consultant el Supervisor: {e}")
+
+                # 3. Fallback de la pròpia màquina si tot falla
+                if not my_ip:
+                    import socket
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    try:
+                        s.connect((manager_ip, 8024))
+                        my_ip = s.getsockname()[0]
+                    except Exception:
+                        my_ip = "127.0.0.1"
+                    finally:
+                        s.close()
 
                 import requests as _req
                 url = f"http://{manager_ip}:8024/api/community/register_node"
