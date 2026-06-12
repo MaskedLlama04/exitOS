@@ -1124,9 +1124,20 @@ def save_config():
         # Registre al Gestor Comunitari en segon pla (no bloqueja l'usuari)
         def _register_in_background():
             try:
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    # No fa falta que el port estigui obert en UDP, això només resol la ruta
+                    s.connect((manager_ip, 8024))
+                    my_ip = s.getsockname()[0]
+                except Exception:
+                    my_ip = "127.0.0.1"
+                finally:
+                    s.close()
+
                 import requests as _req
                 url = f"http://{manager_ip}:8024/api/community/register_node"
-                payload = {"username": name, "community_id": community_id}
+                payload = {"username": name, "community_id": community_id, "ip_address": my_ip}
                 res = _req.post(url, json=payload, timeout=5)
                 if res.status_code == 200:
                     manager_data = res.json()
