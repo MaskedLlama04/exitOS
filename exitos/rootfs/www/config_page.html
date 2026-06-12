@@ -288,7 +288,8 @@
     status.textContent = 'Connectant amb el gestor central...';
     status.style.color = '#888';
 
-    fetch(`http://${centralManagerIp}:58024/api/communities`, { signal: AbortSignal.timeout(4000) })
+    // Consultem al nostre propi servidor eXiTOS (que fa de proxy cap al Gestor Central)
+    fetch(`/api/proxy/communities`, { signal: AbortSignal.timeout(4000) })
       .then(r => r.json())
       .then(data => {
         const communities = data.communities || [];
