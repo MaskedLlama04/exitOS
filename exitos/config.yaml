@@ -49,8 +49,10 @@ network_mode: host
 options:
   ollama_url: "http://192.168.191.70:11434/"
   ollama_model: "llama3.1:latest"
+  central_manager_ip: "192.168.191.70"
 
 # Schema per validar les opcions
 schema:
   ollama_url: str?
   ollama_model: str?
+  central_manager_ip: str?

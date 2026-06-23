@@ -61,35 +61,58 @@
       <div class="content-section">
         <h1 style="margin-bottom: 15px" data-i18n="config.title">Configuració d'usuari</h1>
 
-        <div class="model-checkbox-div">
-          <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
-            <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
-              placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
-              }}>
-          </label>
+        <div style="display: flex; gap: 2rem; width: 100%; margin-bottom: 25px; flex-wrap: wrap; text-align: left;">
+          <!-- Columna Esquerra: Configuració local -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">Dades de l'Habitatge</h3>
+            <div class="model-checkbox-div">
+              <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
+                <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
+                  placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
+                  }}>
+              </label>
+            </div>
+
+            <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum Global:</span>
+              <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
+                %end
+              </select>
+            </label>
+
+            <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació Global:</span>
+              <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
+                %end
+              </select>
+            </label>
+          </div>
+
+          <!-- Columna Dreta: Comunitat Energètica -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;" data-i18n="config.community_title">Comunitat Energètica</h3>
+
+            <!-- La IP és completament transparent a l'usuari. Només es veurà de forma informativa un cop triada la comunitat -->
+            <input type="hidden" name="manager-ip" id="manager-ip" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}">
+            <p id="manager-ip-display" style="font-size: 0.85em; color: #666; margin-bottom: 15px; display: none;">IP de la comunitat: <span></span></p>
+
+            <label for="community-id" class="config-label"> <span data-i18n="config.community_label">Comunitat:</span>
+              <select class="config-input" name="community-id" id="community-id" {{'disabled' if user_data.get('locked') else '' }}>
+                <!-- S'omple asincronament. Valor per defecte guardat: -->
+                <option value="{{user_data.get('community_id', 1)}}">Carregant comunitats...</option>
+              </select>
+            </label>
+            <small id="community-status" style="display:block; margin-top:-5px; margin-bottom:15px; color:#666;">Connectant amb el gestor...</small>
+
+          </div>
         </div>
 
-        <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum
-            Global:</span>
-          <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
-            %end
-          </select>
-        </label>
-
-        <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació
-            Global:</span>
-          <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
-            %end
-          </select>
-        </label>
 
         <label for="map" class="config-label" data-i18n="config.location">Localització: </label>
         <div class="map-container">
@@ -164,6 +187,8 @@
     const consumption = document.getElementById('global-consumption').value;
     const generation = document.getElementById('global-generation').value;
     const name = document.getElementById('user-name').value;
+    const community_id = parseInt(document.getElementById('community-id').value || 1);
+    const manager_ip = document.getElementById('manager-ip').value;
 
 
     fetch('save_config', {
@@ -172,7 +197,9 @@
       body: JSON.stringify({
         consumption: consumption,
         generation: generation,
-        name: name
+        name: name,
+        community_id: community_id,
+        manager_ip: manager_ip
       })
     }).then(response => response.text())
       .then(data => console.log('Config saved:', data))
@@ -240,6 +267,80 @@
 
   // get_res_certify_data(); // Eliminate manual call, i18n.js will trigger it via onLanguageChange callback
   lockButtons();
+
+  // ======= CÀRREGA ASINCRONA DE COMUNITATS =======
+  const SAVED_COMMUNITY_ID = {{ user_data.get('community_id', 1) }};
+  const IS_LOCKED = {{ 'true' if user_data.get('locked') else 'false' }};
+  let _debounceTimer = null;
+
+  function debouncedLoadCommunities() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(loadCommunities, 800);
+  }
+
+    function loadCommunities() {
+      const managerIpInput = document.getElementById('manager-ip');
+      const managerIpDisplay = document.getElementById('manager-ip-display');
+  
+      const select = document.getElementById('community-id');
+      const status = document.getElementById('community-status');
+      select.innerHTML = '<option value="">Carregant...</option>';
+      status.textContent = 'Connectant amb el gestor central...';
+      status.style.color = '#888';
+  
+      // Consultem al nostre propi servidor eXiTOS (que fa de proxy cap al Gestor Central utilitzant la IP de configuració de l'Addon)
+      fetch(`api/proxy/communities`, { signal: AbortSignal.timeout(4000) })
+      .then(r => r.json())
+      .then(data => {
+        const communities = data.communities || [];
+        const apiManagerIp = data.manager_ip || (managerIpInput ? managerIpInput.value : '192.168.191.70');
+        if (managerIpInput && apiManagerIp) managerIpInput.value = apiManagerIp;
+        select.innerHTML = '';
+        if (communities.length === 0) {
+          select.innerHTML = '<option value="1">Comunitat Pilot (per defecte)</option>';
+          status.textContent = 'Cap comunitat trobada al gestor.';
+          status.style.color = '#f59e0b';
+        } else {
+          communities.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            opt.dataset.ip = c.ip || c.manager_ip || apiManagerIp;
+            opt.dataset.slug = c.slug || '';
+            if (c.id === SAVED_COMMUNITY_ID) opt.selected = true;
+            select.appendChild(opt);
+          });
+          
+          // Actualitza la IP si ve informada de la comunitat (opcional)
+          select.addEventListener('change', function() {
+            const selectedOpt = this.options[this.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.ip) {
+              if (managerIpInput) managerIpInput.value = selectedOpt.dataset.ip;
+              if (managerIpDisplay) {
+                 managerIpDisplay.style.display = 'block';
+                 managerIpDisplay.querySelector('span').textContent = selectedOpt.dataset.ip;
+              }
+            } else {
+              if (managerIpDisplay) managerIpDisplay.style.display = 'none';
+            }
+          });
+          // Força el disparador inicial si ja n'hi ha un de seleccionat
+          select.dispatchEvent(new Event('change'));
+
+          status.textContent = `${communities.length} comunitat(s) disponible(s).`;
+          status.style.color = '#16a34a';
+        }
+      })
+      .catch(() => {
+        // Si no es pot connectar, posem el valor guardat i avisem
+        select.innerHTML = `<option value="${SAVED_COMMUNITY_ID}" selected>Comunitat guardada (ID: ${SAVED_COMMUNITY_ID})</option>`;
+        status.textContent = 'Gestor no accessible. Es farà servir la comunitat guardada.';
+        status.style.color = '#dc2626';
+      });
+  }
+
+  // Carrega inicial en segon pla (no bloqueja la pàgina)
+  loadCommunities();
 
   // Reload certificates when language changes
   I18n.onLanguageChange(function (newLocale) {
