@@ -1302,7 +1302,8 @@ def save_config():
 @app.route('/delete_config', method='DELETE')
 def delete_config():
     """
-    Elimina l'arxiu de configuració d'usuari guardat a /config/user.config"
+    Elimina l'arxiu de configuració d'usuari guardat a /config/user.config
+    i notifica al gestor central per donar de baixa el node de la comunitat.
     :return: String amb l'estat
     """
     user_config_path = forecast.models_filepath + '/config/user.config'
@@ -1312,6 +1313,21 @@ def delete_config():
         generation = aux['generation']
         database.update_sensor_active(sensor=consumption, active=False)
         database.update_sensor_active(sensor=generation, active=False)
+
+        # Notificar al gestor central que l'usuari abandona la comunitat
+        try:
+            manager_ip = aux.get('community_mqtt_host', _get_addon_manager_ip())
+            community_id = aux.get('community_id', 1)
+            name = aux.get('name', '')
+            url = f"http://{manager_ip}:8024/api/community/unregister_node"
+            import requests as _req
+            res = _req.post(url, json={"username": name, "community_id": community_id}, timeout=5)
+            if res.status_code == 200:
+                logger.info(f"✅ Usuari '{name}' donat de baixa del gestor correctament.")
+            else:
+                logger.warning(f"⚠️ Gestor ha respost HTTP {res.status_code} en donar de baixa '{name}'.")
+        except Exception as e:
+            logger.warning(f"⚠️ No s'ha pogut contactar el gestor per donar de baixa: {e}")
 
         os.remove(user_config_path)
         return 'Config file deleted successfully'
