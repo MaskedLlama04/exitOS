@@ -8,7 +8,7 @@ slug: exitos
 description: "Scheduler & optimizer add-on for smart grids for energy management and cost savings."
 version: "1.1.30"
 
-url: "https://github.com/llorencburgas/exitOS"
+url: "https://github.com/MaskedLlama04/exitOS"
 #si colem que s'auto inicii per defecte (l'usuari ho podra canviar)
 init: false
 
@@ -49,8 +49,10 @@ network_mode: host
 options:
   ollama_url: "http://192.168.191.70:11434/"
   ollama_model: "llama3.1:latest"
+  central_manager_ip: "192.168.191.70"
 
 # Schema per validar les opcions
 schema:
   ollama_url: str?
   ollama_model: str?
+  central_manager_ip: str?

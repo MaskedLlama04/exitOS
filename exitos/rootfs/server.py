@@ -10,6 +10,7 @@ import time
 import json
 import glob
 import random
+import re
 import tzlocal
 
 import plotly.graph_objs as go
@@ -30,6 +31,7 @@ import sqlDB as db
 import blockchain as Blockchain
 import numpy as np
 import llm.LLMEngine as llm_engine
+import paho.mqtt.client as mqtt
 
 #endregion
 
@@ -64,6 +66,67 @@ def convert_to_json_serializable(obj):
 # PARÀMETRES DE L'EXECUCIÓ
 HOSTNAME = '0.0.0.0'
 PORT = 55023
+
+ADDON_OPTIONS = {}
+try:
+    import json
+    with open('/data/options.json', 'r') as f:
+        ADDON_OPTIONS = json.load(f)
+except Exception as e:
+    pass
+
+DEFAULT_COMMUNITY_MANAGER_IP = "192.168.191.70"
+LEGACY_COMMUNITY_MANAGER_IP = "192.168.0.201"
+
+def _get_addon_manager_ip():
+    return (ADDON_OPTIONS.get('central_manager_ip') or DEFAULT_COMMUNITY_MANAGER_IP).strip()
+
+def _slugify_topic(value, fallback="node"):
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value or fallback
+
+def _get_cached_community(community_id):
+    try:
+        community_id = int(community_id)
+    except (TypeError, ValueError):
+        return None
+
+    for community in _cached_communities or []:
+        try:
+            if int(community.get("id")) == community_id:
+                return community
+        except (TypeError, ValueError):
+            continue
+    return None
+
+def _resolve_community_manager_ip(community_id=None, posted_manager_ip=None):
+    community = _get_cached_community(community_id)
+    if community:
+        community_ip = (
+            community.get("ip")
+            or community.get("manager_ip")
+            or community.get("mqtt_host")
+            or community.get("host")
+        )
+        if community_ip:
+            return str(community_ip).strip()
+
+    if _cached_communities_source_host:
+        return _cached_communities_source_host
+
+    posted_manager_ip = (posted_manager_ip or "").strip()
+    if posted_manager_ip and posted_manager_ip != LEGACY_COMMUNITY_MANAGER_IP:
+        return posted_manager_ip
+
+    return _get_addon_manager_ip()
+
+def _get_community_slug(community_id):
+    community = _get_cached_community(community_id)
+    if community:
+        return _slugify_topic(community.get("slug") or community.get("name"), "comunitat")
+    return "comunitat_pilot"
 
 
 #INICIACIÓ DE L'APLICACIÓ I LA BASE DE DADES
@@ -136,12 +199,7 @@ def tool_get_optimization_configs(config_name=None, **kwargs):
             if restrictions:
                 result_lines.append("  Restriccions:")
                 for r_id, r_data in restrictions.items():
-                    val = r_data.get('value', '')
-                    if isinstance(val, list):
-                        val_str = f"{val[0]}% - {val[1]}%"
-                    else:
-                        val_str = str(val)
-                    result_lines.append(f"    - {r_data.get('name', r_id)}: {val_str}")
+                    result_lines.append(f"    - {r_data.get('name', r_id)}: {r_data.get('value', '')}")
 
             extra_vars = cfg.get("extra_vars", {})
             if extra_vars:
@@ -636,6 +694,57 @@ def get_global_flexi_data():
     except Exception as e:
         logger.exception(f"❌ Error obtenint scheduler': {e}")
 
+@app.route('/api/flexibility')
+def api_get_flexibility():
+    """
+    Endpoint per al Gestor de Comunitats. 
+    Retorna les dades de flexibilitat i consum/generació del dia actual en format JSON.
+    """
+    try:
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, "optimizations/"+today+".pkl")
+        
+        if not os.path.exists(full_path):
+            return json.dumps({"status": "error", "message": "No hi ha dades d'optimització per avui"})
+
+        opt_data = joblib.load(full_path)
+        
+        # Convertim dades a llistes per assegurar serialització JSON
+        return json.dumps({
+            "status": "ok",
+            "f_up": list(opt_data.get('total_fup', [])),
+            "f_down": list(opt_data.get('total_fdown', [])),
+            "timestamps": [t.strftime("%Y-%m-%d %H:%M") if hasattr(t, 'strftime') else str(t) for t in opt_data.get('timestamps', [])],
+            "consumption": list(opt_data.get('baseline_consumption', opt_data.get('total_balance', []))),
+            "production": list(opt_data.get('total_generators', [0.0]*24))
+        })
+    except Exception as e:
+        logger.error(f"Error a /api/flexibility: {e}")
+        return json.dumps({"status": "error", "message": str(e)})
+
+@app.route('/api/consigna', method='POST')
+def api_receive_consigna():
+    """
+    Endpoint per rebre ordres (consignes) des del Gestor de Comunitats.
+    """
+    try:
+        data = request.json
+        if not data:
+            return json.dumps({"status": "error", "message": "Dades buides"})
+        
+        order = data.get('order')
+        manager = data.get('manager', 'Desconegut')
+        
+        logger.info(f"📥 ORDRE REBUDA de [{manager}]: {order}")
+        
+        # Aquí és on s'hauria d'implementar la lògica real.
+        # De moment ho loguegem per confirmar que la comunicació és correcta.
+        
+        return json.dumps({"status": "ok", "message": "Ordre rebuda correctament"})
+    except Exception as e:
+        logger.error(f"Error a /api/consigna: {e}")
+        return json.dumps({"status": "error", "message": str(e)})
+
 @app.route('/get_device_config_and_state/<file_name>')
 def get_device_config_and_state(file_name):
     """
@@ -1011,6 +1120,58 @@ def get_forecast_data(model_name):
 
 #endregion PÀGINA MODEL
 
+@app.route('/api/proxy/communities')
+def proxy_communities():
+    """
+    Retorna la llista de comunitats disponibles.
+    1r intent: la llista rebuda via MQTT del Gestor Comunitari (mètode preferit i més robust).
+    2n intent (fallback): crida HTTP directa al Gestor (pot fallar per xarxa/tallafocs).
+    """
+    global _cached_communities
+    logger.info("🔍 [API] S'ha rebut una crida a /api/proxy/communities")
+    response.content_type = 'application/json'
+
+    # --- OPCIO 1: Llista rebuda per MQTT (no depèn d'HTTP entre HA i el gestor) ---
+    if _cached_communities is not None:
+        manager_ip = _resolve_community_manager_ip()
+        communities = []
+        for community in _cached_communities:
+            item = dict(community)
+            item.setdefault("ip", manager_ip)
+            item.setdefault("manager_ip", manager_ip)
+            item.setdefault("slug", _slugify_topic(item.get("slug") or item.get("name"), "comunitat"))
+            communities.append(item)
+        logger.info(f"✅ [API] Retornant la llista de comunitats des de memòria (MQTT): {[c.get('name') for c in _cached_communities]}")
+        return json.dumps({"status": "ok", "communities": communities, "manager_ip": manager_ip, "source": "mqtt"})
+
+
+    # --- OPCIO 2: Fallback via HTTP (per si el subscriber encara no ha rebut el retain) ---
+    try:
+        import requests as _req
+        default_manager_ip = _get_addon_manager_ip()
+        central_manager_ip = request.params.get('ip', default_manager_ip)
+        if not central_manager_ip:
+            central_manager_ip = default_manager_ip
+        url = f"http://{central_manager_ip}:8024/api/communities"
+        res = _req.get(url, timeout=5)
+        if res.status_code == 200:
+            payload = res.json()
+            communities = []
+            for community in payload.get("communities", []):
+                item = dict(community)
+                item.setdefault("ip", central_manager_ip)
+                item.setdefault("manager_ip", central_manager_ip)
+                item.setdefault("slug", _slugify_topic(item.get("slug") or item.get("name"), "comunitat"))
+                communities.append(item)
+            payload["communities"] = communities
+            payload["manager_ip"] = central_manager_ip
+            return json.dumps(payload)
+        else:
+            return json.dumps({"error": f"HTTP {res.status_code}"})
+    except Exception as e:
+        logger.error(f"❌ [API] Error crític a proxy_communities: {e}", exc_info=True)
+        return json.dumps({"error": str(e), "hint": "El subscriber MQTT encara no ha rebut la llista. Espera uns instants i torna-ho a provar."})
+
 #region PÀGINA CONFIGURACIÓ
 @app.post('/save_config')
 def save_config():
@@ -1024,7 +1185,12 @@ def save_config():
         consumption = data.get('consumption')
         generation = data.get('generation')
         name = data.get('name')
-
+        try:
+            community_id = int(data.get('community_id') or 1)
+        except (TypeError, ValueError):
+            community_id = 1
+        manager_ip = _resolve_community_manager_ip(community_id, data.get('manager_ip'))
+        community_slug = _get_community_slug(community_id)
 
         config_dir = forecast.models_filepath + 'config/user.config'
         os.makedirs(forecast.models_filepath + 'config', exist_ok=True)
@@ -1039,16 +1205,91 @@ def save_config():
         res_add_user = blockchain.registrar_usuario(claves['public_key'], claves['private_key'])
         logger.debug(f"res_add_user: {res_add_user}")
 
-
-
+        # Guardem la configuració primer sense esperar el gestor
+        mqtt_slug = _slugify_topic(name, "node")
 
         joblib.dump({ 'consumption': consumption,
                             'generation': generation,
                             'name' : name,
                             'public_key': claves['public_key'],
-                            'private_key': claves['private_key']}, config_dir)
+                            'private_key': claves['private_key'],
+                            'mqtt_slug': mqtt_slug,
+                            'community_id': community_id,
+                            'community_slug': community_slug,
+                            'community_mqtt_host': manager_ip}, config_dir)
 
         logger.info(f"Configuració guardada al fitxer {config_dir}")
+        logger.info(f"[COMUNITAT] Usuari '{name}' configurat per a community_id={community_id}, slug='{community_slug}', gestor={manager_ip}")
+
+        # Registre al Gestor Comunitari en segon pla (no bloqueja l'usuari)
+        def _register_in_background():
+            try:
+                # Obtenim la IP real de la Raspberry a través del Supervisor de HA de forma dinàmica
+                my_ip = None
+                try:
+                    import os, requests, ipaddress
+                    token = os.environ.get('SUPERVISOR_TOKEN')
+                    if token:
+                        res = requests.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {token}"}, timeout=2)
+                        if res.status_code == 200:
+                            data = res.json()
+                            manager_addr = ipaddress.ip_address(manager_ip)
+                            
+                            # 1. Busquem l'adreça de la Raspberry que comparteixi subxarxa amb el gestor
+                            for iface in data.get("data", {}).get("interfaces", []):
+                                for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                                    try:
+                                        network = ipaddress.ip_network(ip_cidr, strict=False)
+                                        if manager_addr in network:
+                                            my_ip = ip_cidr.split('/')[0]
+                                            break
+                                    except:
+                                        pass
+                                if my_ip: break
+                            
+                            # 2. Si no la troba, agafem qualsevol IP de la Raspberry que no sigui Docker (172.x) ni localhost
+                            if not my_ip:
+                                for iface in data.get("data", {}).get("interfaces", []):
+                                    for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                                        ip = ip_cidr.split('/')[0]
+                                        if ip != "127.0.0.1" and not ip.startswith("172."):
+                                            my_ip = ip
+                                            break
+                                    if my_ip: break
+                except Exception as e:
+                    logger.warning(f"Error consultant el Supervisor: {e}")
+
+                # 3. Fallback de la pròpia màquina si tot falla
+                if not my_ip:
+                    import socket
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    try:
+                        s.connect((manager_ip, 8024))
+                        my_ip = s.getsockname()[0]
+                    except Exception:
+                        my_ip = "127.0.0.1"
+                    finally:
+                        s.close()
+
+                import requests as _req
+                url = f"http://{manager_ip}:8024/api/community/register_node"
+                payload = {"username": name, "community_id": community_id, "ip_address": my_ip}
+                res = _req.post(url, json=payload, timeout=5)
+                if res.status_code == 200:
+                    manager_data = res.json()
+                    confirmed_slug = manager_data.get('mqtt_slug', mqtt_slug)
+                    # Actualitzem el config guardat amb l'slug confirmat pel gestor
+                    if confirmed_slug and confirmed_slug != mqtt_slug:
+                        saved = joblib.load(config_dir)
+                        saved['mqtt_slug'] = confirmed_slug
+                        joblib.dump(saved, config_dir)
+                    logger.info("✅ Registre a la comunitat confirmat pel Gestor!")
+                else:
+                    logger.warning(f"⚠️ Gestor resposta inesperable (HTTP {res.status_code}). El node funcionarà amb slug local.")
+            except Exception as e:
+                logger.warning(f"⚠️ Gestor Comunitari no accessible ara ({manager_ip}). El node funciona amb configuració local.")
+
+        threading.Thread(target=_register_in_background, daemon=True, name="CommunityRegister").start()
 
         certificate_hourly_task()
         return "OK"
@@ -1061,7 +1302,8 @@ def save_config():
 @app.route('/delete_config', method='DELETE')
 def delete_config():
     """
-    Elimina l'arxiu de configuració d'usuari guardat a /config/user.config"
+    Elimina l'arxiu de configuració d'usuari guardat a /config/user.config
+    i notifica al gestor central per donar de baixa el node de la comunitat.
     :return: String amb l'estat
     """
     user_config_path = forecast.models_filepath + '/config/user.config'
@@ -1071,6 +1313,21 @@ def delete_config():
         generation = aux['generation']
         database.update_sensor_active(sensor=consumption, active=False)
         database.update_sensor_active(sensor=generation, active=False)
+
+        # Notificar al gestor central que l'usuari abandona la comunitat
+        try:
+            manager_ip = aux.get('community_mqtt_host', _get_addon_manager_ip())
+            community_id = aux.get('community_id', 1)
+            name = aux.get('name', '')
+            url = f"http://{manager_ip}:8024/api/community/unregister_node"
+            import requests as _req
+            res = _req.post(url, json={"username": name, "community_id": community_id}, timeout=5)
+            if res.status_code == 200:
+                logger.info(f"✅ Usuari '{name}' donat de baixa del gestor correctament.")
+            else:
+                logger.warning(f"⚠️ Gestor ha respost HTTP {res.status_code} en donar de baixa '{name}'.")
+        except Exception as e:
+            logger.warning(f"⚠️ No s'ha pogut contactar el gestor per donar de baixa: {e}")
 
         os.remove(user_config_path)
         return 'Config file deleted successfully'
@@ -1112,13 +1369,41 @@ def get_user_configuration_data():
         'consumption': '',
         'generation': '',
         'locked': False,
+        'openremote_asset_id': '',
+        'openremote_client_name': '',
+        'openremote_password': '',
+        'mqtt_slug': '',
+        'community_id': 1,
+        'community_slug': 'comunitat_pilot',
+        'community_mqtt_host': _get_addon_manager_ip(),
+        'community_mqtt_port': 1883,
+        'community_mqtt_user': 'exitos_node',
+        'community_mqtt_pass': 'LaTevaContrasenya',
+        'community_mqtt_ca_cert': '',
     }
 
     if os.path.exists(config_dir):
         aux = joblib.load(config_dir)
-        user_data['name'] = aux['name']
-        user_data['consumption'] = aux['consumption']
-        user_data['generation'] = aux['generation']
+        user_data['name'] = aux.get('name', '')
+        user_data['consumption'] = aux.get('consumption', '')
+        user_data['generation'] = aux.get('generation', '')
+        user_data['openremote_asset_id'] = aux.get('openremote_asset_id', '')
+        user_data['openremote_client_name'] = aux.get('openremote_client_name', '')
+        user_data['openremote_password'] = aux.get('openremote_password', '')
+        user_data['mqtt_slug'] = aux.get('mqtt_slug', _slugify_topic(user_data['name'], 'node'))
+        user_data['community_id'] = aux.get('community_id', 1)
+        user_data['community_slug'] = aux.get('community_slug', _get_community_slug(user_data['community_id']))
+
+        saved_manager_ip = (aux.get('community_mqtt_host') or '').strip()
+        addon_manager_ip = _get_addon_manager_ip()
+        if saved_manager_ip == LEGACY_COMMUNITY_MANAGER_IP and addon_manager_ip != LEGACY_COMMUNITY_MANAGER_IP:
+            saved_manager_ip = addon_manager_ip
+        user_data['community_mqtt_host'] = saved_manager_ip or addon_manager_ip
+
+        user_data['community_mqtt_port'] = aux.get('community_mqtt_port', 1883)
+        user_data['community_mqtt_user'] = aux.get('community_mqtt_user', 'exitos_node')
+        user_data['community_mqtt_pass'] = aux.get('community_mqtt_pass', 'LaTevaContrasenya')
+        user_data['community_mqtt_ca_cert'] = aux.get('community_mqtt_ca_cert', '')
         user_data['locked'] = True
 
     return user_data
@@ -1171,7 +1456,11 @@ def optimize(today = False):
                 "timestamps": optimalScheduler.timestamps,
                 "total_balance": total_balance_hourly,
                 "total_price": price,
-                "devices_config": devices_config
+                "devices_config": devices_config,
+                # Forecast de generació solar (PV), disponible un cop acabada l'optimització.
+                "total_generators": list(optimalScheduler.global_generator_forecast['forecast_data']),
+                # Forecast de consum base (sense optimitzar). S'usa per a l'atribut Demand_base.
+                "baseline_consumption": list(optimalScheduler.global_consumer_forecast['forecast_data']),
             }
 
             total_fup, total_fdown = flexibility(optimization_result)
@@ -1195,7 +1484,7 @@ def optimize(today = False):
 
             #Configurar Scheduler
             schedule.clear('device_config_tasks')
-            schedule.every(10).minutes.do(run_threaded, config_optimized_devices_HA).tag('device_config_tasks')
+            schedule.every().hour.at(":00").do(run_threaded, config_optimized_devices_HA).tag('device_config_tasks')
             logger.info("📅 Job programat per executar-se un cop cada hora (als minuts :00)")
 
 
@@ -1394,9 +1683,9 @@ def flexibility(optimization_db):
                   list(optimalScheduler.generators.values()) + \
                   list(optimalScheduler.energy_storages.values())
 
-    # Variables per acumular resultats de flexibilitat totals
-    total_fup = optimization_db['total_balance'].copy()
-    total_fdown = optimization_db['total_balance'].copy()
+    # Variables per acumular resultats de flexibilitat totals (inicialitzades a zero)
+    total_fup = [0.0] * len(optimization_db['total_balance'])
+    total_fdown = [0.0] * len(optimization_db['total_balance'])
 
 
     for device in all_devices:
@@ -1544,14 +1833,18 @@ def certificate_hourly_task():
             public_key = aux['public_key']
             private_key = aux['private_key']
 
+            # Usem datetime sense timezone per consistència amb els timestamps de pandas/BD
             now = datetime.now()
-
 
             if  database.get_sensor_active(generation) == 1 and generation != "None":
                 database.update_database(generation)
                 database.clean_database_hourly_average(sensor_id=generation, all_sensors=False)
                 generation_data = database.get_latest_data_from_sensor(sensor_id=generation)
-                generation_timestamp = to_datetime(generation_data[0]).strftime("%Y-%m-%d %H:%M")
+                # Eliminem la timezone si n'hi ha (per evitar comparacions mixtes)
+                generation_ts = to_datetime(generation_data[0])
+                if hasattr(generation_ts, 'tzinfo') and generation_ts.tzinfo is not None:
+                    generation_ts = generation_ts.tz_localize(None)
+                generation_timestamp = generation_ts.strftime("%Y-%m-%d %H:%M")
                 generation_value = generation_data[1]
             else:
                 logger.warning(f"⚠️ Recorda seleccionar el sensor de Generació i marcar-lo a l'apartat 'Sensors' per a guardar.")
@@ -1562,7 +1855,11 @@ def certificate_hourly_task():
                 database.update_database(consumption)
                 database.clean_database_hourly_average(sensor_id=consumption, all_sensors=False)
                 consumption_data = database.get_latest_data_from_sensor(sensor_id=consumption)
-                consumption_timestamp = to_datetime(consumption_data[0]).strftime("%Y-%m-%d %H:%M")
+                # Eliminem la timezone si n'hi ha (per evitar comparacions mixtes)
+                consumption_ts = to_datetime(consumption_data[0])
+                if hasattr(consumption_ts, 'tzinfo') and consumption_ts.tzinfo is not None:
+                    consumption_ts = consumption_ts.tz_localize(None)
+                consumption_timestamp = consumption_ts.strftime("%Y-%m-%d %H:%M")
                 consumption_value = consumption_data[1]
             else:
                 logger.warning(f"⚠️ Recorda seleccionar el sensor de Consum i marcar-lo a l'apartat 'Sensors' per a guardar.")
@@ -1623,7 +1920,7 @@ def config_optimized_devices_HA():
             if can_optimize == "Empty": return
 
         current_date = datetime.now(tzlocal.get_localzone())
-        logger.info(f"\n📆 [{current_date.strftime('%d-%b-%Y   %X')} ] Configurant dispositius H.A.")
+        logger.info(f"\n🗓️ [{current_date.strftime('%d-%b-%Y   %X')} ] Configurant dispositius H.A.")
 
         optimization_db = joblib.load(full_path)
 
@@ -1656,9 +1953,7 @@ def run_threaded(job_func):
     job_thread = threading.Thread(target=job_func)
     job_thread.start()
 
-schedule.every().day.at("23:30").do(run_threaded, daily_task)
-schedule.every().day.at("02:00").do(run_threaded, daily_database_clean)
-schedule.every().hour.at(":00").do(run_threaded, certificate_hourly_task)
+
 
 def run_scheduled_tasks():
     logger.debug("🗓️ SCHEDULER STARTED")
@@ -1674,6 +1969,372 @@ scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
 scheduler_thread.start()
 
 #endregion DAILY TASKS
+
+consecutive_mqtt_errors = 0
+
+def push_data_to_exit_server():
+    """Recull dades de consum, generació i flexibilitat i les envia a OpenRemote via MQTT."""
+    global consecutive_mqtt_errors
+    try:
+        # Recuperem la configuració de l'usuari (nom, sensors, etc.)
+        user_data = get_user_configuration_data()
+        
+        # Configuració de la connexió (Obtenció dinàmica o fallback al node original si no està definit)
+        client_name = user_data.get('openremote_client_name') or "exitos_ha_1"
+        realm = "master"
+        password = user_data.get('openremote_password') or "O0d7c2BUnpRtddiIb9bWiqgbF5Os14DW"
+        asset_id = user_data.get('openremote_asset_id') or "2NcsRmHORUTxvJ3YfNrbce"
+        
+        # Paho MQTT v2 requereix especificar la versió de la Callback API
+        try:
+            from paho.mqtt.enums import CallbackAPIVersion
+            client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=client_name)
+        except ImportError:
+            # Fallback per a versions antigues de paho-mqtt
+            client = mqtt.Client(client_id=client_name)
+            
+        client.username_pw_set(f"{realm}:{client_name}", password)
+        
+        # Activem el xifratge TLS/SSL per connectar-nos al port 8883 d'OpenRemote.
+        # El broker MQTT d'OpenRemote espera connexions xifrades en aquest port.
+        # Usem cert_reqs=ssl.CERT_NONE per ignorar completament el certificat
+        # auto-signat d'OpenRemote (equivalent al 'verify=False' de les crides REST).
+        # tls_insecure_set(True) desactiva la verificació del hostname (necessari els dos).
+        import ssl
+        client.tls_set(cert_reqs=ssl.CERT_NONE)
+        client.tls_insecure_set(True)
+        
+        client.connect("192.168.191.70", 8883, 60)
+        
+        # Iniciem el bucle de xarxa en un fil paral·lel (loop_start).
+        # Sense això, els publish() de sota només guarden els missatges a la memòria
+        # cau del programa però mai els envien físicament per la xarxa. El loop_start
+        # crea un fil en segon pla que s'encarrega de moure les dades al broker MQTT.
+        client.loop_start()
+        
+        # Recollim dades actuals (Real-time) forçant que siguin floats
+        def get_val(sensor_id):
+            val = database.get_current_sensor_state(sensor_id)
+            try:
+                # Si és una sèrie de pandas, agafem l'últim valor
+                if hasattr(val, 'iloc'):
+                    return float(val.iloc[-1])
+                return float(val) if val is not None else 0.0
+            except:
+                return 0.0
+
+        # Substituïm la selecció de l'usuari web pel sensor real que sabem que funciona
+        consumption = get_val("sensor.smart_meter_63a_potencia_real")
+        generation = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
+        battery_soc = get_val("sensor.batterij_soc")
+        
+        # Grid variables
+        grid_power = get_val("sensor.smart_meter_63a_potencia_real")
+        grid_import = max(grid_power, 0.0)
+        grid_export = max(-grid_power, 0.0)
+        net_load = grid_power # Usually net load is equivalent to grid power from smart meter
+        
+        # OpenRemote expects: realm/client/writeattributevalue/{attributeName}/{assetId}
+        # Attribute identifiers are case-sensitive; use the exact lower-case names from the asset.
+        base_topic = f"{realm}/{client_name}/writeattributevalue"
+        sent_attributes = []
+
+        def publish_attr(attribute_name, value):
+            result = client.publish(f"{base_topic}/{attribute_name}/{asset_id}", value)
+            result.wait_for_publish(timeout=5)
+            if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                sent_attributes.append(attribute_name)
+            else:
+                logger.warning(f"No s'ha pogut publicar l'atribut MQTT '{attribute_name}' (rc={result.rc})")
+
+        publish_attr("consumption", consumption)
+        publish_attr("pv_power", generation)
+        publish_attr("battery_soc", battery_soc)
+        publish_attr("grid_power", grid_power)
+        publish_attr("grid_import", grid_import)
+        publish_attr("grid_export", grid_export)
+        publish_attr("net_load", net_load)
+        
+        # Dades d'optimització i flexibilitat (Forecasts)
+        today = datetime.today().strftime("%d_%m_%Y")
+        full_path = os.path.join(forecast.models_filepath, f"optimizations/{today}.pkl")
+        if os.path.exists(full_path):
+            opt_data = joblib.load(full_path)
+            
+            # Forecasts (Enviem la llista completa com a JSON)
+            if 'total_balance' in opt_data:
+                publish_attr("forecast_consumption", json.dumps(opt_data['total_balance']))
+            
+            if 'total_fup' in opt_data:
+                publish_attr("forecast_flex_up", json.dumps(opt_data['total_fup']))
+                publish_attr("flex_up", opt_data['total_fup'][0])
+                
+            if 'total_fdown' in opt_data:
+                publish_attr("forecast_flex_down", json.dumps(opt_data['total_fdown']))
+                publish_attr("flex_down", opt_data['total_fdown'][0])
+
+            if 'total_generators' in opt_data:
+                publish_attr("forecast_pv_power", json.dumps(opt_data['total_generators']))
+
+            if 'baseline_consumption' in opt_data:
+                publish_attr("demand_base", json.dumps(opt_data['baseline_consumption']))
+
+        logger.info(f"📤 Enviant dades a OpenRemote (MQTT 192.168.191.70:8883): {sent_attributes}")
+
+        # FIX: Esperem 1 segon abans de desconnectar per assegurar que la cua
+        # de missatges s'ha buidat completament cap a OpenRemote. Sense aquesta
+        # pausa, el disconnect() pot arribar a tancar la connexió abans que tots
+        # els publish() anteriors hagin sortit físicament per la xarxa.
+        time.sleep(1)
+        client.loop_stop()
+        client.disconnect()
+        
+        if consecutive_mqtt_errors > 0:
+            logger.info("✅ Connexió MQTT amb OpenRemote restaurada.")
+            consecutive_mqtt_errors = 0
+            
+    except Exception as e:
+        consecutive_mqtt_errors += 1
+        if consecutive_mqtt_errors == 1:
+            logger.warning(f"⚠️ OpenRemote MQTT no accessible (es reintentarà al proper cicle): {e}")
+
+    # ── FASE 1: Publicar telemetria consolidada al Broker Mosquitto del Gestor Comunitari ──
+    push_data_to_community_broker()
+
+
+consecutive_community_mqtt_errors = 0
+# Llista de comunitats rebuda via MQTT del Gestor Comunitari (retain)
+_cached_communities = None
+_cached_communities_source_host = None
+
+def push_data_to_community_broker():
+    """Envia un JSON consolidat de telemetria al Broker Mosquitto del Gestor Comunitari."""
+    global consecutive_community_mqtt_errors
+    try:
+        user_data = get_user_configuration_data()
+        community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
+        community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
+        community_mqtt_user = user_data.get('community_mqtt_user') or "exitos_node"
+        community_mqtt_pass = user_data.get('community_mqtt_pass') or "LaTevaContrasenya"
+        community_slug = user_data.get('community_slug') or "comunitat_pilot"
+        user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
+
+        try:
+            from paho.mqtt.enums import CallbackAPIVersion
+            client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=f"exitos_{user_slug}")
+        except ImportError:
+            client = mqtt.Client(client_id=f"exitos_{user_slug}")
+
+        if community_mqtt_user:
+            client.username_pw_set(community_mqtt_user, community_mqtt_pass)
+
+        if community_mqtt_port == 8883:
+            import ssl
+            ca_cert = user_data.get('community_mqtt_ca_cert')
+            if ca_cert and os.path.exists(ca_cert):
+                client.tls_set(ca_certs=ca_cert, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+            else:
+                client.tls_set(cert_reqs=ssl.CERT_NONE)
+                client.tls_insecure_set(True)
+
+        client.connect(community_mqtt_host, community_mqtt_port, 60)
+        client.loop_start()
+
+        def get_val(sensor_id):
+            val = database.get_current_sensor_state(sensor_id)
+            try:
+                if hasattr(val, 'iloc'): return float(val.iloc[-1])
+                return float(val) if val is not None else 0.0
+            except: return 0.0
+
+        grid_import_val = get_val(user_data.get('consumption')) if user_data.get('consumption') and user_data.get('consumption') != 'None' else 0.0
+        grid_export_val = get_val(user_data.get('generation')) if user_data.get('generation') and user_data.get('generation') != 'None' else 0.0
+        battery_soc = get_val("sensor.batterij_soc")
+
+        telemetry_payload = {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "battery_soc": battery_soc,
+            "consumption": grid_import_val,
+            "production": grid_export_val,
+            "grid_power": grid_import_val - grid_export_val,
+            "grid_import": grid_import_val,
+            "grid_export": grid_export_val,
+            "net_load": grid_import_val - grid_export_val,
+        }
+
+        topic = f"exitos/{community_slug}/users/{user_slug}/telemetry"
+        result = client.publish(topic, json.dumps(telemetry_payload), qos=1)
+        result.wait_for_publish(timeout=5)
+
+        time.sleep(0.5)
+        client.loop_stop()
+        client.disconnect()
+
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            logger.info(f"📤 Telemetria enviada al Gestor Comunitari ({community_mqtt_host}:{community_mqtt_port}) → {topic}")
+            if consecutive_community_mqtt_errors > 0:
+                logger.info("✅ Connexió MQTT amb el Gestor Comunitari restaurada.")
+                consecutive_community_mqtt_errors = 0
+        else:
+            logger.warning(f"⚠️ No s'ha pogut publicar telemetria comunitària (rc={result.rc})")
+
+    except Exception as e:
+        consecutive_community_mqtt_errors += 1
+        if consecutive_community_mqtt_errors == 1:
+            logger.warning(f"⚠️ Gestor Comunitari MQTT no accessible (es reintentarà al proper cicle): {e}")
+
+# ── FASE 3: SUBSCRIBER PER A CONTROL BIDIRECCIONAL ──
+def start_community_mqtt_subscriber():
+    """Inicia un fil en segon pla per escoltar ordres del Gestor Comunitari."""
+    def run_subscriber():
+        while True:
+            try:
+                user_data = get_user_configuration_data()
+                community_mqtt_host = user_data.get('community_mqtt_host') or "192.168.191.70"
+                community_mqtt_port = int(user_data.get('community_mqtt_port') or 1883)
+                community_mqtt_user = user_data.get('community_mqtt_user') or "exitos_node"
+                community_mqtt_pass = user_data.get('community_mqtt_pass') or "LaTevaContrasenya"
+                community_slug = user_data.get('community_slug') or "comunitat_pilot"
+                user_slug = user_data.get('mqtt_slug') or user_data.get('name', 'node').strip().lower().replace(" ", "_")
+                
+                if not user_slug or user_slug == "node":
+                    # Espera a que l'usuari configuri el node
+                    time.sleep(60)
+                    continue
+                    
+                client_id = f"exitos_sub_{user_slug}"
+                try:
+                    from paho.mqtt.enums import CallbackAPIVersion
+                    client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id=client_id)
+                except ImportError:
+                    client = mqtt.Client(client_id=client_id)
+                    
+                if community_mqtt_user:
+                    client.username_pw_set(community_mqtt_user, community_mqtt_pass)
+                    
+                if community_mqtt_port == 8883:
+                    import ssl
+                    ca_cert = user_data.get('community_mqtt_ca_cert')
+                    if ca_cert and os.path.exists(ca_cert):
+                        client.tls_set(ca_certs=ca_cert, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+                    else:
+                        client.tls_set(cert_reqs=ssl.CERT_NONE)
+                        client.tls_insecure_set(True)
+                
+                # Callbacks MQTT
+                def on_connect(client, userdata, flags, reason_code, properties=None):
+                    if reason_code == 0:
+                        topic_cmd = f"exitos/{community_slug}/users/{user_slug}/command"
+                        client.subscribe(topic_cmd)
+                        logger.info(f"[FASE 3] Subscrit i escoltant ordres de la comunitat a: {topic_cmd}")
+                        # Subscriure's també a la llista de comunitats (missatge retingut)
+                        client.subscribe("exitos/communities/list")
+                        logger.info("[FASE 3] Subscrit a 'exitos/communities/list' per rebre la llista de comunitats.")
+                    else:
+                        logger.warning(f"⚠️ Error al connectar el subscriber MQTT comunitari (rc={reason_code})")
+
+                def on_message(client, userdata, msg):
+                    global _cached_communities, _cached_communities_source_host
+                    try:
+                        payload = json.loads(msg.payload.decode())
+
+                        # Missatge de llista de comunitats (retain del gestor)
+                        if msg.topic == "exitos/communities/list":
+                            if payload.get("status") == "ok" and "communities" in payload:
+                                _cached_communities = payload["communities"]
+                                _cached_communities_source_host = community_mqtt_host
+                                logger.info(f"[MQTT] Llista de comunitats rebuda i actualitzada: {[c['name'] for c in _cached_communities]}")
+                            return
+
+                        # Missatge d'ordre de la comunitat (Fase 3)
+                        logger.info(f"[MQTT COMMAND] Rebuda ordre de la comunitat: {payload}")
+                        command_type = payload.get("type")
+                        if command_type == "cut_load":
+                            logger.warning("[EMERGÈNCIA] El Gestor Comunitari ha ordenat un TALL de càrrega!")
+                            # TODO: Aquí s'acoblarà amb l'actuador de Home Assistant
+                        elif command_type == "restore_load":
+                            logger.info("[RESTAURACIÓ] El Gestor Comunitari ha ordenat RESTAURAR la càrrega.")
+                            # TODO: Aquí s'acoblarà amb l'actuador de Home Assistant
+                        else:
+                            logger.info(f"Ordre desconeguda: {command_type}")
+
+                    except Exception as e:
+                        logger.error(f"Error processant el missatge MQTT comunitari: {e}")
+
+                client.on_connect = on_connect
+                client.on_message = on_message
+                
+                logger.info(f"Connectant escolta a {community_mqtt_host}:{community_mqtt_port}...")
+                client.connect(community_mqtt_host, community_mqtt_port, 60)
+                
+                # Aquest loop és bloquejant i manté el fil viu escoltant el broker
+                client.loop_forever()
+                
+            except Exception as e:
+                logger.warning(f"⚠️ El Subscriber comunitari ha perdut la connexió ({e}). Reintentant en 60 segons...")
+                time.sleep(60)
+
+    import threading
+    t = threading.Thread(target=run_subscriber, daemon=True, name="MQTT_Community_Subscriber")
+    t.start()
+
+
+def start_communities_discovery_subscriber():
+    """Subscriber lleuger que s'inicia SEMPRE a l'arrencar, sense necessitat de configuració d'usuari.
+    Es connecta al broker MQTT del Gestor Comunitari i escolta 'exitos/communities/list' (retain).
+    Quan rep el missatge, actualitza _cached_communities."""
+    def run_discovery():
+        global _cached_communities, _cached_communities_source_host
+        while True:
+            try:
+                manager_ip = _get_addon_manager_ip()
+                mqtt_port = 1883
+                # També intentem llegir de la configuració guardada si hi ha
+                try:
+                    user_data = get_user_configuration_data()
+                    manager_ip = user_data.get('community_mqtt_host') or manager_ip
+                    mqtt_port = int(user_data.get('community_mqtt_port') or mqtt_port)
+                except Exception:
+                    pass
+
+                try:
+                    from paho.mqtt.enums import CallbackAPIVersion
+                    disc_client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id="exitos_discovery")
+                except (ImportError, AttributeError):
+                    disc_client = mqtt.Client(client_id="exitos_discovery")
+
+                # Credencials per defecte del gestor
+                disc_client.username_pw_set("exitos_node", "LaTevaContrasenya")
+
+                def _on_disc_connect(client, userdata, flags, reason_code, properties=None):
+                    global _cached_communities_source_host
+                    if reason_code == 0:
+                        _cached_communities_source_host = manager_ip
+                        client.subscribe("exitos/communities/list")
+                        logger.info(f"[DESCOBERTA] Subscrit a 'exitos/communities/list' via {manager_ip}:{mqtt_port}")
+
+                def _on_disc_message(client, userdata, msg):
+                    global _cached_communities, _cached_communities_source_host
+                    try:
+                        payload = json.loads(msg.payload.decode())
+                        if payload.get("status") == "ok" and "communities" in payload:
+                            _cached_communities = payload["communities"]
+                            _cached_communities_source_host = manager_ip
+                            logger.info(f"Comunitats rebudes: {[c['name'] for c in _cached_communities]}")
+                    except Exception as e:
+                        logger.error(f"Error processant 'communities/list': {e}")
+
+                disc_client.on_connect = _on_disc_connect
+                disc_client.on_message = _on_disc_message
+                disc_client.connect(manager_ip, mqtt_port, 30)
+                disc_client.loop_forever()
+
+            except Exception as e:
+                logger.warning(f"[🔍 DESCOBERTA] No s'ha pogut connectar al gestor ({e}). Reintentant en 60s...")
+                time.sleep(60)
+
+    t = threading.Thread(target=run_discovery, daemon=True, name="MQTT_Communities_Discovery")
+    t.start()
 
 #region DEBUG REGION
 @app.route('/panik_function')
@@ -1864,5 +2525,20 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"❌ Error inicialitzant LLM: {e}")
 
+    # Configurar programació de tasques
+    schedule.every().day.at("23:30").do(run_threaded, daily_task)
+    schedule.every().day.at("02:00").do(run_threaded, daily_database_clean)
+    schedule.every(10).minutes.do(run_threaded, certificate_hourly_task)
+    schedule.every(15).minutes.do(run_threaded, push_data_to_exit_server)
+
+    # Execució immediata al arrencar per confirmar connexió
+    run_threaded(push_data_to_exit_server)
+
+    # [Descoberta] Sempre escolta la llista de comunitats del gestor via MQTT
+    # Funciona fins i tot si l'usuari no s'ha configurat encara
+    start_communities_discovery_subscriber()
+
+    # [Fase 3] Iniciem l'escolta contínua de comandaments de la comunitat
+    start_community_mqtt_subscriber()
+
     main()
-    

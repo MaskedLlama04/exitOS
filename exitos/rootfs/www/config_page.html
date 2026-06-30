@@ -61,35 +61,69 @@
       <div class="content-section">
         <h1 style="margin-bottom: 15px" data-i18n="config.title">Configuració d'usuari</h1>
 
-        <div class="model-checkbox-div">
-          <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
-            <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
-              placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
-              }}>
-          </label>
+        <div style="display: flex; gap: 2rem; width: 100%; margin-bottom: 25px; flex-wrap: wrap; text-align: left;">
+          <!-- Columna Esquerra: Configuració local -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;">Dades de l'Habitatge</h3>
+            <div class="model-checkbox-div">
+              <label for="user-name" class="config-label"><span data-i18n="config.name_label">Nom:</span>
+                <input class="config-input" type="text" name="user-name" id="user-name" data-i18n="config.name_placeholder"
+                  placeholder="Entra el teu nom" value="{{user_data['name']}}" {{'disabled' if user_data['locked'] else ''
+                  }}>
+              </label>
+            </div>
+
+            <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum Global:</span>
+              <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
+                %end
+              </select>
+            </label>
+
+            <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació Global:</span>
+              <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
+                user_data['locked'] else '' }}>
+                <option value="None">None</option>
+                %for sensor in sensors:
+                <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
+                %end
+              </select>
+            </label>
+          </div>
+
+          <!-- Columna Dreta: Comunitat Energètica -->
+          <div style="flex: 1; min-width: 300px;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: inherit;" data-i18n="config.community_title">Comunitat Energètica</h3>
+
+            <!-- La IP és completament transparent a l'usuari. Només es veurà de forma informativa un cop triada la comunitat -->
+            <input type="hidden" name="manager-ip" id="manager-ip" value="{{user_data.get('community_mqtt_host', '192.168.191.70')}}">
+
+            <label for="community-id" class="config-label"> <span>ID de la Comunitat:</span>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" class="config-input" style="flex: 1; margin-bottom: 0;" name="community-id" id="community-id" placeholder="Ex: 1" value="{{user_data.get('community_id', '')}}" {{'disabled' if user_data.get('locked') else '' }}>
+                <button type="button" class="btn" style="background: #3498db; min-width: 80px; margin-bottom: 0;" id="searchCommunityBtn" onclick="searchCommunity()" {{'disabled' if user_data.get('locked') else '' }}><i class="fa-solid fa-magnifying-glass"></i></button>
+              </div>
+            </label>
+
+            <!-- Targeta d'informació de la comunitat -->
+            <div id="community-info-card" style="display: none; margin-top: 15px; padding: 18px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+               <h4 id="community-info-name" style="margin-top:0; margin-bottom:12px; font-size:1.15em; color:#1a202c;">Nom de la Comunitat</h4>
+               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center;">
+                 <p style="margin:0; font-size:0.9em; color:#4a5568; display:flex; align-items:center;"><i class="fa-solid fa-network-wired" style="width:22px; color:#4caf50;"></i> <strong id="community-info-nodes" style="margin-right:4px;">0</strong> nodes</p>
+                 <p style="margin:0; font-size:0.9em; color:#4a5568; display:flex; align-items:center;"><i class="fa-solid fa-bolt" style="width:22px; color:#f39c12;"></i> Flexibilitat:&nbsp;<strong id="community-info-flexibility">0</strong>&nbsp;kWh/dia</p>
+                 <p style="margin:0; font-size:0.9em; color:#4a5568; display:flex; align-items:center;"><i class="fa-solid fa-server" style="width:22px; color:#4caf50;"></i> IP:&nbsp;<span id="community-info-ip">192.168.x.x</span></p>
+                 <p style="margin:0; font-size:0.9em; color:#4a5568; display:flex; align-items:center;"><i class="fa-solid fa-microchip" style="width:22px; color:#3498db;"></i> Repartiment (IA): Actiu</p>
+               </div>
+            </div>
+            
+            <small id="community-status" style="display:block; margin-top:12px; margin-bottom:15px; font-weight:500;"></small>
+
+          </div>
         </div>
 
-        <label for="global-consumption" class="config-label"> <span data-i18n="config.global_consumption">Consum
-            Global:</span>
-          <select class="config-input" name="global-consumption" id="global-consumption" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['consumption'] else '' }}> {{sensor}} </option>
-            %end
-          </select>
-        </label>
-
-        <label for="global-generation" class="config-label"> <span data-i18n="config.global_generation">Generació
-            Global:</span>
-          <select class="config-input" name="global-generation" id="global-generation" {{'disabled' if
-            user_data['locked'] else '' }}>
-            <option value="None">None</option>
-            %for sensor in sensors:
-            <option value="{{sensor}}" {{'selected' if sensor==user_data['generation'] else '' }}>{{sensor}}</option>
-            %end
-          </select>
-        </label>
 
         <label for="map" class="config-label" data-i18n="config.location">Localització: </label>
         <div class="map-container">
@@ -158,13 +192,24 @@
     if (locked) document.getElementById('lockBtn').disabled = true;
   }
 
+  let hasJoinedCurrentSession = false;
+
   function lockForm() {
     setFormLock(true);
 
     const consumption = document.getElementById('global-consumption').value;
     const generation = document.getElementById('global-generation').value;
     const name = document.getElementById('user-name').value;
+    const community_id = parseInt(document.getElementById('community-id').value || 1);
+    const manager_ip = document.getElementById('manager-ip').value;
 
+    // Incrementem el nombre de nodes visualment si acabem d'unir-nos
+    if (!hasJoinedCurrentSession && document.getElementById('community-info-card').style.display !== 'none') {
+        const nodesEl = document.getElementById('community-info-nodes');
+        let currentNodes = parseInt(nodesEl.textContent) || 0;
+        nodesEl.textContent = currentNodes + 1;
+        hasJoinedCurrentSession = true;
+    }
 
     fetch('save_config', {
       method: 'POST',
@@ -172,7 +217,9 @@
       body: JSON.stringify({
         consumption: consumption,
         generation: generation,
-        name: name
+        name: name,
+        community_id: community_id,
+        manager_ip: manager_ip
       })
     }).then(response => response.text())
       .then(data => console.log('Config saved:', data))
@@ -181,6 +228,16 @@
 
   function unlockForm() {
     setFormLock(false);
+
+    // Decrementem el nombre de nodes visualment si havíem unit o ja estàvem units
+    if (document.getElementById('community-info-card').style.display !== 'none') {
+        const nodesEl = document.getElementById('community-info-nodes');
+        let currentNodes = parseInt(nodesEl.textContent) || 0;
+        if (currentNodes > 0) {
+            nodesEl.textContent = currentNodes - 1;
+        }
+        hasJoinedCurrentSession = false;
+    }
 
     fetch('delete_config', {
       method: 'DELETE'
@@ -240,6 +297,75 @@
 
   // get_res_certify_data(); // Eliminate manual call, i18n.js will trigger it via onLanguageChange callback
   lockButtons();
+
+  // ======= CERCA DE COMUNITATS =======
+  const SAVED_COMMUNITY_ID = {{ user_data.get('community_id', 1) }};
+  const IS_LOCKED = {{ 'true' if user_data.get('locked') else 'false' }};
+
+  function searchCommunity() {
+    const inputId = document.getElementById('community-id').value;
+    const status = document.getElementById('community-status');
+    const infoCard = document.getElementById('community-info-card');
+    const managerIpInput = document.getElementById('manager-ip');
+    
+    if (!inputId) {
+      status.textContent = 'Si us plau, introdueix un ID vàlid.';
+      status.style.color = '#dc2626';
+      infoCard.style.display = 'none';
+      return;
+    }
+
+    status.textContent = 'Cercant comunitat a la base de dades...';
+    status.style.color = '#888';
+    infoCard.style.display = 'none';
+
+    // Consultem al nostre propi servidor eXiTOS (que fa de proxy cap al Gestor Central utilitzant la IP de configuració de l'Addon)
+    fetch(`api/proxy/communities`, { signal: AbortSignal.timeout(4000) })
+    .then(r => r.json())
+    .then(data => {
+      const communities = data.communities || [];
+      const apiManagerIp = data.manager_ip || (managerIpInput ? managerIpInput.value : '192.168.191.70');
+      
+      const foundCommunity = communities.find(c => String(c.id) === String(inputId));
+
+      if (!foundCommunity) {
+        status.textContent = `No s'ha trobat cap comunitat amb l'ID ${inputId}.`;
+        status.style.color = '#dc2626';
+        infoCard.style.display = 'none';
+      } else {
+        // Omplim les dades
+        document.getElementById('community-info-name').textContent = foundCommunity.name;
+        
+        // Calcular nodes (si estem bloquejats ja estem dins i el gestor ja ho compta al total, si no, mostrem els que hi ha)
+        let nodes = foundCommunity.node_count || 0;
+        document.getElementById('community-info-nodes').textContent = nodes;
+        hasJoinedCurrentSession = IS_LOCKED; // Si estava bloquejat a l'inici, considerem que ja estàvem comptats.
+
+        // Calcular flexibilitat simulada basada en nodes (1.5 kWh/dia per node)
+        let simulatedFlex = (nodes * 1.5).toFixed(1);
+        if (simulatedFlex == 0) simulatedFlex = "0.0";
+        document.getElementById('community-info-flexibility').textContent = "~" + simulatedFlex;
+        
+        const communityIp = foundCommunity.ip || foundCommunity.manager_ip || apiManagerIp;
+        document.getElementById('community-info-ip').textContent = communityIp;
+        if (managerIpInput) managerIpInput.value = communityIp;
+
+        infoCard.style.display = 'block';
+        status.textContent = 'Comunitat trobada amb èxit!';
+        status.style.color = '#16a34a';
+      }
+    })
+    .catch(() => {
+      status.textContent = 'Error de connexió. No s\'ha pogut verificar la comunitat.';
+      status.style.color = '#dc2626';
+    });
+  }
+
+  // Si estem bloquejats o hi ha un ID desat, busquem la comunitat inicialment per mostrar-ne la info
+  if (SAVED_COMMUNITY_ID && String(SAVED_COMMUNITY_ID).trim() !== "") {
+    document.getElementById('community-id').value = SAVED_COMMUNITY_ID;
+    searchCommunity();
+  }
 
   // Reload certificates when language changes
   I18n.onLanguageChange(function (newLocale) {
