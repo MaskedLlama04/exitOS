@@ -21,7 +21,8 @@ var I18n = (function () {
             return;
         }
 
-        fetch(`resources/lang/${locale}.json`)
+        // Append a timestamp to prevent the browser from caching old JSON files
+        fetch(`resources/lang/${locale}.json?t=${new Date().getTime()}`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`Could not load locale ${locale}`);

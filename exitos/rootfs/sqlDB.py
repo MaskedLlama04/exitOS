@@ -470,7 +470,7 @@ class SqlDB():
         response = requests.post(url, headers=self.headers, json=data)
 
         if response.status_code != 200:
-            logger.warning(f"     ▫️ Resposta {sensor_id}: {response.status_code} - {response.text}")
+            logger.warning(f"        Resposta {sensor_id}: {response.status_code} - {response.text}")
 
     # endregion
 
@@ -851,5 +851,3 @@ class SqlDB():
 
 
     # endregion
-
-

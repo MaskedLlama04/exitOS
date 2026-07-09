@@ -238,7 +238,8 @@
                 <i class="fa-solid fa-broom"></i>
                 <span data-i18n="chat.clear_btn">Netejar vista</span>
             </button>
-            <button class="delete-btn" id="deleteBtn" onclick="deleteConversation()" title="Elimina tota la conversa (el LLM no ho recordarà)">
+            <button class="delete-btn" id="deleteBtn" onclick="deleteConversation()"
+                title="Elimina tota la conversa (el LLM no ho recordarà)">
                 <i class="fa-solid fa-trash"></i>
                 <span data-i18n="chat.delete_btn">Eliminar</span>
             </button>
@@ -273,7 +274,8 @@
     <div class="modal-content">
         <span class="modal-close" onclick="closeDeleteModal()"></span>
         <h2 data-i18n="chat.delete_btn" style="color: var(--text-error-msg); margin-bottom: 15px;">Eliminar</h2>
-        <p data-i18n="chat.delete_confirm" style="text-align: center; margin-bottom: 25px; font-size: 1.05rem;">Segur que vols eliminar tota la conversa? El LLM no recordarà res del que heu parlat.</p>
+        <p data-i18n="chat.delete_confirm" style="text-align: center; margin-bottom: 25px; font-size: 1.05rem;">Segur
+            que vols eliminar tota la conversa? El LLM no recordarà res del que heu parlat.</p>
         <div style="display: flex; justify-content: center; gap: 15px; margin-top: 20px;">
             <button class="btn self-destruct" id="confirmDeleteBtn" onclick="confirmDeleteConversation()">
                 <i class="fa-solid fa-trash"></i> <span data-i18n="chat.delete_btn">Eliminar</span>
@@ -286,8 +288,8 @@
 </div>
 
 <script>
-    // URL base del servidor eXiT (sempre port 55023, independentment d'on s'accedeixi)
-    const SERVER_BASE_URL = `${window.location.protocol}//${window.location.hostname}:55023`;
+    // URL base del servidor eXiT (sempre port 55024, independentment d'on s'accedeixi)
+    const SERVER_BASE_URL = `${window.location.protocol}//${window.location.hostname}:55024`;
 
     function sendMessage() {
         const input = document.getElementById('userInput');

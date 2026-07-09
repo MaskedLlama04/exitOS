@@ -95,18 +95,19 @@ class ShellyPlus1pm(AbsConsumer):
         for t in range(min_len):
 
             start_state = plan[t]
-            if start_state == 0: p_val = 0
-            else:  p_val = self.consumption
-
-            #
-            # # Flex Down: Capacitat de reduir consum. Si està ON, podem reduir self.consumption. Si OFF, 0.
-            # if start_state > 0:
-            #     flex_down = 0 #self.consumption
-            # else:
-            #     flex_down = 0
+            if start_state == 0: 
+                p_val = 0
+                # Si està OFF, només el podem encendre (Això significa absorbir energia, Flex Down)
+                fup_val = 0
+                fdown_val = self.consumption 
+            else:  
+                p_val = self.consumption
+                # Si està ON, només el podem apagar (Això significa alliberar energia, Flex Up)
+                fup_val = self.consumption
+                fdown_val = 0
                 
-            fup.append(1)
-            fdown.append(0)
+            fup.append(fup_val)
+            fdown.append(fdown_val)
             power_profile.append(p_val)
             
         return fup, fdown, power_profile, timestamps[:min_len]

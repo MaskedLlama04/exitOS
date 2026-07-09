@@ -1,14 +1,14 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 
 #nom de l'add-on name es user freandly name i slug ha de ser un id unic.
-name: "exitOS"
-slug: exitos
+name: "eXiTOS Development"
+slug: exitos_dev
 
 #descripcions i altres coses sobre el nostre addon
 description: "Scheduler & optimizer add-on for smart grids for energy management and cost savings."
-version: "1.1.31"
+version: "1.1.30"
 
-url: "https://github.com/llorencburgas/exitOS"
+url: "https://github.com/MaskedLlama04/exitOS"
 #si colem que s'auto inicii per defecte (l'usuari ho podra canviar)
 init: false
 
@@ -36,11 +36,11 @@ startup: services
 
 #ports que utilitzarem amb la nostra webbapp 
 ports:
-  55023/tcp: 55023
+  55024/tcp: 55024
 
 #url i port de entrada a la webapp (true = /) - port ha de ser on corre el server de bottle
 ingress: true
-ingress_port: 55023
+ingress_port: 55024
 
 # Network mode host per accedir a serveis del host (com Ollama)
 network_mode: host
@@ -49,8 +49,10 @@ network_mode: host
 options:
   ollama_url: "http://192.168.191.70:11434/"
   ollama_model: "llama3.1:latest"
+  central_manager_ip: "192.168.191.70"
 
 # Schema per validar les opcions
 schema:
   ollama_url: str?
   ollama_model: str?
+  central_manager_ip: str?
