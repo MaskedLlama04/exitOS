@@ -64,18 +64,6 @@ class EVCharger(AbsConsumer):
             
             consumption_profile.append(accio_real)
 
-            # Predirp Departure i llançar mega penalitzacions si no s'assoleix Target SoC
-            # is_departing = False
-            # if i < len(self.is_home) - 1:
-            #     if self.is_home[i] == 1 and self.is_home[i+1] == 0:
-            #         is_departing = True
-            # elif i == len(self.is_home) - 1 and self.is_home[i] == 1:
-            #     is_departing = True
-            #
-            # if is_departing:
-            #     if current_state_kwh < self.target_kwh:
-            #         total_cost += (self.target_kwh - current_state_kwh) * 500
-
         consumption_profile_24h = [0.0] * 24
         for i in range(min(len(consumption_profile), 24)):
             consumption_profile_24h[i] = consumption_profile[i]
