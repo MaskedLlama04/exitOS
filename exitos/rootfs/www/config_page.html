@@ -148,6 +148,20 @@
           <div id="certificates-container"></div>
         </div>
       </div>
+      </div>
+    </div>
+
+    <!-- Modal per a Contrasenya -->
+    <div id="passwordModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+      <div style="background: white; padding: 25px; border-radius: 10px; width: 350px; max-width: 90%; text-align: left; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h3 style="margin-top: 0; color: #1a202c;" data-i18n="config.password_modal_title">Unir-se a la Comunitat</h3>
+        <p style="color: #4a5568; font-size: 0.9em;" data-i18n="config.password_modal_desc">Si us plau, introdueix la contrasenya per accedir a aquesta comunitat energètica.</p>
+        <input type="password" id="communityPassword" placeholder="Contrasenya" style="width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #e2e8f0; border-radius: 6px; box-sizing: border-box;" onkeydown="if(event.key==='Enter') confirmJoin()">
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn" type="button" style="background: #a0aec0; padding: 8px 15px; margin: 0;" onclick="closePasswordModal()" data-i18n="config.password_modal_cancel">Cancel·lar</button>
+          <button class="btn" type="button" style="background: #4caf50; padding: 8px 15px; margin: 0;" onclick="confirmJoin()" data-i18n="config.password_modal_confirm">Confirmar</button>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -195,6 +209,23 @@
   let hasJoinedCurrentSession = false;
 
   function lockForm() {
+    // Abans de bloquejar i guardar, demanem la contrasenya
+    document.getElementById('passwordModal').style.display = 'flex';
+    document.getElementById('communityPassword').value = '';
+    document.getElementById('communityPassword').focus();
+  }
+
+  function closePasswordModal() {
+    document.getElementById('passwordModal').style.display = 'none';
+  }
+
+  function confirmJoin() {
+    const password = document.getElementById('communityPassword').value.trim();
+    closePasswordModal();
+    executeJoin(password);
+  }
+
+  function executeJoin(password) {
     setFormLock(true);
 
     const consumption = document.getElementById('global-consumption').value;
@@ -202,14 +233,6 @@
     const name = document.getElementById('user-name').value;
     const community_id = parseInt(document.getElementById('community-id').value || 1);
     const manager_ip = document.getElementById('manager-ip').value;
-
-    // Incrementem el nombre de nodes visualment si acabem d'unir-nos
-    if (!hasJoinedCurrentSession && document.getElementById('community-info-card').style.display !== 'none') {
-        const nodesEl = document.getElementById('community-info-nodes');
-        let currentNodes = parseInt(nodesEl.textContent) || 0;
-        nodesEl.textContent = currentNodes + 1;
-        hasJoinedCurrentSession = true;
-    }
 
     fetch('save_config', {
       method: 'POST',
@@ -219,11 +242,37 @@
         generation: generation,
         name: name,
         community_id: community_id,
-        manager_ip: manager_ip
+        manager_ip: manager_ip,
+        password: password
       })
-    }).then(response => response.text())
-      .then(data => console.log('Config saved:', data))
-      .catch(err => console.error('Error saving config:', err));
+    }).then(response => {
+       if (!response.ok) {
+           return response.text().then(text => { throw new Error(text) });
+       }
+       return response.text();
+    })
+    .then(data => {
+        console.log('Config saved:', data);
+        // Incrementem el nombre de nodes visualment si acabem d'unir-nos
+        if (!hasJoinedCurrentSession && document.getElementById('community-info-card').style.display !== 'none') {
+            const nodesEl = document.getElementById('community-info-nodes');
+            let currentNodes = parseInt(nodesEl.textContent) || 0;
+            nodesEl.textContent = currentNodes + 1;
+            hasJoinedCurrentSession = true;
+        }
+    })
+    .catch(err => {
+        console.error('Error saving config:', err);
+        // Desbloqueja si hi ha error
+        setFormLock(false);
+        // Mostrar error net sense JSON si és possible
+        try {
+            let errObj = JSON.parse(err.message);
+            alert((I18n.get('config.join_error') || "Error a l'unir-se: ") + (errObj.message || errObj.error || err.message));
+        } catch(e) {
+            alert((I18n.get('config.join_error') || "Error a l'unir-se: ") + err.message);
+        }
+    });
   }
 
   function unlockForm() {

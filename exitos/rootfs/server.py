@@ -1195,6 +1195,8 @@ def save_config():
         config_dir = forecast.models_filepath + 'config/user.config'
         os.makedirs(forecast.models_filepath + 'config', exist_ok=True)
 
+        password = data.get('password', '')
+
         database.update_sensor_active(sensor=consumption, active=True)
         database.update_sensor_active(sensor=generation, active=True)
 
@@ -1205,9 +1207,73 @@ def save_config():
         res_add_user = blockchain.registrar_usuario(claves['public_key'], claves['private_key'])
         logger.debug(f"res_add_user: {res_add_user}")
 
-        # Guardem la configuració primer sense esperar el gestor
         mqtt_slug = _slugify_topic(name, "node")
 
+        # Registre al Gestor Comunitari Síncron per poder comprovar la contrasenya
+        my_ip = None
+        try:
+            import os, requests, ipaddress
+            token = os.environ.get('SUPERVISOR_TOKEN')
+            if token:
+                res = requests.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {token}"}, timeout=2)
+                if res.status_code == 200:
+                    net_data = res.json()
+                    manager_addr = ipaddress.ip_address(manager_ip)
+                    
+                    for iface in net_data.get("data", {}).get("interfaces", []):
+                        for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                            try:
+                                network = ipaddress.ip_network(ip_cidr, strict=False)
+                                if manager_addr in network:
+                                    my_ip = ip_cidr.split('/')[0]
+                                    break
+                            except:
+                                pass
+                        if my_ip: break
+                    
+                    if not my_ip:
+                        for iface in net_data.get("data", {}).get("interfaces", []):
+                            for ip_cidr in iface.get("ipv4", {}).get("address", []):
+                                ip = ip_cidr.split('/')[0]
+                                if ip != "127.0.0.1" and not ip.startswith("172."):
+                                    my_ip = ip
+                                    break
+                            if my_ip: break
+        except Exception as e:
+            logger.warning(f"Error consultant el Supervisor: {e}")
+
+        if not my_ip:
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect((manager_ip, 8024))
+                my_ip = s.getsockname()[0]
+            except Exception:
+                my_ip = "127.0.0.1"
+            finally:
+                s.close()
+
+        import requests as _req
+        url = f"http://{manager_ip}:8024/api/community/register_node"
+        payload = {"username": name, "community_id": community_id, "ip_address": my_ip, "community_password": password}
+        try:
+            res = _req.post(url, json=payload, timeout=5)
+            if res.status_code == 401:
+                response.status = 401
+                err_data = res.json()
+                return json.dumps({"error": err_data.get('message', "Contrasenya incorrecta")})
+            elif res.status_code == 200:
+                manager_data = res.json()
+                confirmed_slug = manager_data.get('mqtt_slug')
+                if confirmed_slug:
+                    mqtt_slug = confirmed_slug
+                logger.info("✅ Registre a la comunitat confirmat pel Gestor!")
+            else:
+                logger.warning(f"⚠️ Gestor resposta inesperable (HTTP {res.status_code}).")
+        except Exception as e:
+            logger.warning(f"⚠️ Gestor Comunitari no accessible ara ({manager_ip}): {e}")
+
+        # Guardem la configuració
         joblib.dump({ 'consumption': consumption,
                             'generation': generation,
                             'name' : name,
@@ -1220,76 +1286,6 @@ def save_config():
 
         logger.info(f"Configuració guardada al fitxer {config_dir}")
         logger.info(f"[COMUNITAT] Usuari '{name}' configurat per a community_id={community_id}, slug='{community_slug}', gestor={manager_ip}")
-
-        # Registre al Gestor Comunitari en segon pla (no bloqueja l'usuari)
-        def _register_in_background():
-            try:
-                # Obtenim la IP real de la Raspberry a través del Supervisor de HA de forma dinàmica
-                my_ip = None
-                try:
-                    import os, requests, ipaddress
-                    token = os.environ.get('SUPERVISOR_TOKEN')
-                    if token:
-                        res = requests.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {token}"}, timeout=2)
-                        if res.status_code == 200:
-                            data = res.json()
-                            manager_addr = ipaddress.ip_address(manager_ip)
-                            
-                            # 1. Busquem l'adreça de la Raspberry que comparteixi subxarxa amb el gestor
-                            for iface in data.get("data", {}).get("interfaces", []):
-                                for ip_cidr in iface.get("ipv4", {}).get("address", []):
-                                    try:
-                                        network = ipaddress.ip_network(ip_cidr, strict=False)
-                                        if manager_addr in network:
-                                            my_ip = ip_cidr.split('/')[0]
-                                            break
-                                    except:
-                                        pass
-                                if my_ip: break
-                            
-                            # 2. Si no la troba, agafem qualsevol IP de la Raspberry que no sigui Docker (172.x) ni localhost
-                            if not my_ip:
-                                for iface in data.get("data", {}).get("interfaces", []):
-                                    for ip_cidr in iface.get("ipv4", {}).get("address", []):
-                                        ip = ip_cidr.split('/')[0]
-                                        if ip != "127.0.0.1" and not ip.startswith("172."):
-                                            my_ip = ip
-                                            break
-                                    if my_ip: break
-                except Exception as e:
-                    logger.warning(f"Error consultant el Supervisor: {e}")
-
-                # 3. Fallback de la pròpia màquina si tot falla
-                if not my_ip:
-                    import socket
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    try:
-                        s.connect((manager_ip, 8024))
-                        my_ip = s.getsockname()[0]
-                    except Exception:
-                        my_ip = "127.0.0.1"
-                    finally:
-                        s.close()
-
-                import requests as _req
-                url = f"http://{manager_ip}:8024/api/community/register_node"
-                payload = {"username": name, "community_id": community_id, "ip_address": my_ip}
-                res = _req.post(url, json=payload, timeout=5)
-                if res.status_code == 200:
-                    manager_data = res.json()
-                    confirmed_slug = manager_data.get('mqtt_slug', mqtt_slug)
-                    # Actualitzem el config guardat amb l'slug confirmat pel gestor
-                    if confirmed_slug and confirmed_slug != mqtt_slug:
-                        saved = joblib.load(config_dir)
-                        saved['mqtt_slug'] = confirmed_slug
-                        joblib.dump(saved, config_dir)
-                    logger.info("✅ Registre a la comunitat confirmat pel Gestor!")
-                else:
-                    logger.warning(f"⚠️ Gestor resposta inesperable (HTTP {res.status_code}). El node funcionarà amb slug local.")
-            except Exception as e:
-                logger.warning(f"⚠️ Gestor Comunitari no accessible ara ({manager_ip}). El node funciona amb configuració local.")
-
-        threading.Thread(target=_register_in_background, daemon=True, name="CommunityRegister").start()
 
         certificate_hourly_task()
         return "OK"
