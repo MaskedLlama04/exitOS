@@ -1212,7 +1212,7 @@ def save_config():
         # Registre al Gestor Comunitari Síncron per poder comprovar la contrasenya
         my_ip = None
         try:
-            import os, requests, ipaddress
+            import requests, ipaddress
             token = os.environ.get('SUPERVISOR_TOKEN')
             if token:
                 res = requests.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {token}"}, timeout=2)
@@ -2552,3 +2552,4 @@ if __name__ == "__main__":
     start_community_mqtt_subscriber()
 
     main()
+    
