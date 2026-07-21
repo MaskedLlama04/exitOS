@@ -137,7 +137,12 @@
         "leave_community": "Leave Community",
         "last_certificates": "Last certificates:",
         "succes_certify_message": "Received Successfully",
-        "error_certify_message": "Certificate Error"
+        "error_certify_message": "Certificate Error",
+        "password_modal_title": "Join Community",
+        "password_modal_desc": "Please, enter the password to access this energy community.",
+        "password_modal_cancel": "Cancel",
+        "password_modal_confirm": "Confirm",
+        "password_modal_placeholder": "Password"
     },
     "chat": {
         "title": "eXiT Virtual Assistant",

@@ -137,7 +137,12 @@
         "leave_community": "Abandonar Comunitat",
         "last_certificates": "Últims certificats:",
         "succes_certify_message": "Rebut Correctament",
-        "error_certify_message": "Error en el certificat"
+        "error_certify_message": "Error en el certificat",
+        "password_modal_title": "Unir-se a la Comunitat",
+        "password_modal_desc": "Si us plau, introdueix la contrasenya per accedir a aquesta comunitat energètica.",
+        "password_modal_cancel": "Cancel·lar",
+        "password_modal_confirm": "Confirmar",
+        "password_modal_placeholder": "Contrasenya"
     },
     "chat": {
         "title": "Assistent Virtual eXiT",

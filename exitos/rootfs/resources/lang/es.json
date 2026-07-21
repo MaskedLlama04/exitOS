@@ -137,7 +137,12 @@
         "leave_community": "Abandonar Comunidad",
         "last_certificates": "Últimos certificados:",
         "succes_certify_message": "Recibido Correctamente",
-        "error_certify_message": "Error en el certificado"
+        "error_certify_message": "Error en el certificado",
+        "password_modal_title": "Unirse a la Comunidad",
+        "password_modal_desc": "Por favor, introduce la contraseña para acceder a esta comunidad energética.",
+        "password_modal_cancel": "Cancelar",
+        "password_modal_confirm": "Confirmar",
+        "password_modal_placeholder": "Contraseña"
     },
     "chat": {
         "title": "Asistente Virtual eXiT",
